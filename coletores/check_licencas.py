@@ -122,6 +122,7 @@ def main() -> None:
     resultado = {
         "fonte": "licencas (sistema interno)",
         "data": date.today().isoformat(),
+        "coletado_em": datetime.now().isoformat(),
         "vencendo_em_breve": sorted(proximas_prod, key=lambda l: l["dias"] or 999),
         "vencidas_recentes": sorted(vencidas_recentes, key=lambda l: l["dias"] or 0),
         "vencidas_antigas_total": len(vencidas_prod) - len(vencidas_recentes),

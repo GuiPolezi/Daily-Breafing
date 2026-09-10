@@ -2,6 +2,7 @@
 .venv/
 dados/
 relatorio.md
+relatorio_semanal.md
 briefing.log
 __pycache__/
 listar_pastas.py

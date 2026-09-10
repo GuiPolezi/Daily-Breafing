@@ -11,7 +11,7 @@ import imaplib
 import ssl
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -84,6 +84,7 @@ def main() -> None:
     resultado = {
         "fonte": "email",
         "data": date.today().isoformat(),
+        "coletado_em": datetime.now().isoformat(),
         "nao_lidos": contar(mail, "INBOX", "UNSEEN"),
         "recebidos_hoje": contar(mail, "INBOX", f"SINCE {hoje}"),
         "spam_total": contar(mail, SPAM_FOLDER, "ALL"),

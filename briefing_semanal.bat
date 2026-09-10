@@ -1,0 +1,10 @@
+@echo off
+REM Briefing semanal - NAO roda coletores; usa apenas o historico em historico/metricas.jsonl
+cd /d "%~dp0"
+call .venv\Scripts\activate.bat
+
+echo === Briefing semanal %date% %time% ===
+
+call claude -p "A data de hoje e %date%. Leia o arquivo historico/metricas.jsonl (uma linha JSON por dia, campo 'data' em formato ISO AAAA-MM-DD; campos: email_nao_lidos, email_recebidos, email_spam, fila_abertos, meus_abertos, atend_dia_ref, atend_total, atend_por_tecnico, lic_vencendo, lic_vencidas_recentes). Considere APENAS as linhas cujo campo 'data' esteja dentro dos ultimos 12 dias corridos contados a partir de hoje e ignore todas as demais. Dentro desse recorte, a 'semana atual' sao os ultimos 5 dias uteis registrados (os 5 mais recentes) e a 'semana anterior' sao os dias uteis registrados antes deles. Escreva o arquivo relatorio_semanal.md em portugues, nesta estrutura: 1) 'Periodo coberto' - primeira e ultima data da semana atual e quantos dias foram registrados. 2) 'Atendimentos da semana' - soma de atend_total dos dias da semana atual e a media diaria (soma dividida pelo numero de dias com atend_total preenchido). 3) 'Ranking de tecnicos' - some atend_por_tecnico de todos os dias da semana atual, tecnico por tecnico, e liste em ordem decrescente com o total de cada um. 4) 'Fila de chamados' - fila_abertos no primeiro dia versus o ultimo dia da semana atual e diga se subiu, desceu ou ficou estavel, com a diferenca em numero. 5) 'Licencas' - compare lic_vencidas_recentes no inicio e no fim da semana atual e diga se houve melhora, piora ou estabilidade; cite tambem lic_vencendo do ultimo dia. 6) 'Comparacao com a semana anterior' - somente se houver pelo menos 3 dias registrados na semana anterior: compare total de atendimentos, media diaria e fila_abertos; se nao houver dados suficientes, omita esta secao inteira sem comentar. Tom objetivo, frases curtas, pronto para ser colado em reuniao de equipe. Nao invente dados que nao estejam no arquivo; se um campo estiver nulo em algum dia, ignore esse dia naquele calculo e diga quantos dias entraram na conta." --allowedTools "Read,Write"
+
+echo === Relatorio gerado: relatorio_semanal.md ===

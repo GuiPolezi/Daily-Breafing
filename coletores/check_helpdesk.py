@@ -213,6 +213,7 @@ def main() -> None:
     resultado = {
         "fonte": "helpdesk (Milldesk)",
         "data": date.today().isoformat(),
+        "coletado_em": datetime.now().isoformat(),
         "fila_total_abertos": len(todos),
         "meus_abertos": len(meus),
         "meus_novos_hoje": sum(1 for t in meus if eh_de_hoje(t.get("start", ""))),
