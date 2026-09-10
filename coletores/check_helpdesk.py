@@ -23,6 +23,10 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+import unicodedata
+from datetime import timedelta
+import re
+
 load_dotenv()
 
 API_KEY = os.environ["HELPDESK_API_KEY"]
@@ -77,6 +81,92 @@ def eh_de_hoje(valor: str) -> bool:
     return False
 
 
+SOLICITANTE_ATENDIMENTO = os.getenv("HELPDESK_SOLICITANTE_ATENDIMENTO", "Atendimento Diário")
+
+
+def normalizar(texto: str) -> str:
+    """minúsculas e sem acentos, p/ comparar 'Diario' com 'Diário'."""
+    texto = unicodedata.normalize("NFD", str(texto))
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn").lower().strip()
+
+
+def ultimo_dia_util(referencia: date | None = None) -> date:
+    """Dia útil anterior: seg -> sex; ter-sáb -> dia anterior; dom -> sex."""
+    dia = (referencia or date.today()) - timedelta(days=1)
+    while dia.weekday() >= 5:  # 5=sábado, 6=domingo
+        dia -= timedelta(days=1)
+    return dia
+
+PADRAO_TECNICO = re.compile(
+    r"T[ée]cnico\s*[:\-]\s*(.*?)\s*(?:<br\s*/?>|\r|\n|Cliente\s*:|Finalizado|Resumo\s*:|$)",
+    re.IGNORECASE,
+)
+
+
+def tecnico_da_descricao(ticket: dict) -> str:
+    """Extrai o nome do técnico da linha 'Técnico: Fulano' na descrição."""
+    match = PADRAO_TECNICO.search(str(ticket.get("description", "")))
+    return match.group(1).strip() if match else ""
+
+
+def atendimentos_do_dia(dia: date) -> dict:
+    """Tickets FECHADOS criados no dia pelo solicitante de atendimento diário."""
+    tickets = []
+    formato_usado = None
+    erros = []
+    # ISO primeiro (já confirmado que a API aceita); os demais são fallback
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        data_str = dia.strftime(fmt)
+        try:
+            resposta = chamar("showTicketsPerPeriod", {"start": data_str, "end": data_str})
+        except RuntimeError as e:
+            erros.append(f"{fmt} -> {e}")
+            continue
+        formato_usado = fmt
+        if isinstance(resposta, list):
+            tickets = resposta
+        break
+
+    if formato_usado is None:
+        return {"erro": "Nenhum formato de data aceito pela API", "tentativas": erros}
+
+    # Filtro 1: solicitante "Atendimento Diario"
+    alvo = normalizar(SOLICITANTE_ATENDIMENTO)
+    do_solicitante = [t for t in tickets if alvo in normalizar(t.get("requester", ""))]
+
+    # Filtro 2: status Fechado (se o endpoint retornar o campo)
+    aviso_status = None
+    if any("status" in t for t in do_solicitante):
+        atendimentos = [t for t in do_solicitante if normalizar(t.get("status", "")) == "fechado"]
+        nao_fechados = len(do_solicitante) - len(atendimentos)
+    else:
+        atendimentos = do_solicitante
+        nao_fechados = 0
+        aviso_status = "endpoint não retorna 'status'; filtro de Fechado não aplicado"
+
+    # Contagem por técnico (extraído da descrição)
+    por_tecnico: dict[str, int] = {}
+    sem_tecnico = []
+    for t in atendimentos:
+        tecnico = tecnico_da_descricao(t)
+        if not tecnico:
+            sem_tecnico.append(t.get("id"))
+            tecnico = "(não identificado)"
+        por_tecnico[tecnico] = por_tecnico.get(tecnico, 0) + 1
+
+    resultado = {
+        "dia": dia.strftime("%d/%m/%Y") + f" ({['seg','ter','qua','qui','sex','sab','dom'][dia.weekday()]})",
+        "total_atendimentos_fechados": len(atendimentos),
+        "por_tecnico": dict(sorted(por_tecnico.items(), key=lambda kv: -kv[1])),
+        "do_solicitante_mas_nao_fechados": nao_fechados,
+        "chamados_normais_abertos_no_dia": len(tickets) - len(do_solicitante),
+        "tickets_sem_tecnico_na_descricao": sem_tecnico,
+    }
+    if aviso_status:
+        resultado["aviso"] = aviso_status
+    return resultado
+
+
 def main() -> None:
     # Modo utilitário: descobrir os status do seu Milldesk
     if "--listar-status" in sys.argv:
@@ -129,6 +219,7 @@ def main() -> None:
         "meus_tickets": [resumir(t) for t in meus],
         "contagem_por_tecnico": por_tecnico,
         "_debug_campos_do_primeiro_ticket": list(todos[0].keys()) if todos else [],
+        "atendimentos_ultimo_dia_util": atendimentos_do_dia(ultimo_dia_util()),
     }
 
     SAIDA.parent.mkdir(exist_ok=True)
