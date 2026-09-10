@@ -1,0 +1,7 @@
+.env
+.venv/
+dados/
+relatorio.md
+briefing.log
+__pycache__/
+listar_pastas.py
