@@ -63,6 +63,35 @@ Alternativas: Agendador de Tarefas do Windows, GitHub Actions (schedule),
 ou systemd timer. O resultado pode ser enviado para você por e-mail,
 Telegram ou Slack — veja o final do `briefing.sh`.
 
+## Dashboard HTML e notificação (Windows)
+
+Ao final do `briefing.bat`, além do `relatorio.md`, são executados:
+
+1. `gerar_dashboard.py` — gera `dashboard.html`, um único arquivo autocontido
+   (dados, CSS e Chart.js embutidos). Funciona offline e pode ser copiado
+   sozinho para qualquer pasta ou servidor. Contém cards do dia, evolução da
+   fila e dos atendimentos, ranking semanal por técnico, tabela de licenças
+   críticas, o briefing do dia e o status de cada fonte.
+   - O Chart.js é lido de `assets/chart.min.js`; se o arquivo faltar, é baixado
+     uma única vez. Sem rede e sem o arquivo, o dashboard sai sem gráficos
+     (as tabelas continuam).
+   - Se um JSON de `dados/` faltar ou estiver corrompido, a seção correspondente
+     mostra "fonte indisponível" e o restante é gerado normalmente.
+   - `dashboard.html` contém dados internos e está no `.gitignore`.
+2. `notificar.py` — dispara um toast nativo do Windows via PowerShell (sem
+   dependência nova) com o resumo: atendimentos de ontem, fila e licenças em
+   risco. Falha na notificação não interrompe o briefing.
+3. `start "" dashboard.html` — abre o dashboard no navegador padrão.
+
+Configuração opcional no `.env`:
+
+```
+DASHBOARD_MOSTRAR_RANKING=true   # false: sem nomes de técnicos no HTML (só total da equipe)
+DASHBOARD_DIAS_GRAFICO=30        # dias do histórico exibidos nos gráficos
+```
+
+Para gerar o dashboard manualmente: `python gerar_dashboard.py`.
+
 ## Sobre cada fonte
 
 | Fonte      | Dificuldade | Caminho                                                        |
