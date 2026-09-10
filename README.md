@@ -35,6 +35,11 @@ cp .env.exemplo .env
 # edite o .env com suas credenciais
 ```
 
+No help desk, `HELPDESK_AGENT_NAME` aceita um ou vários nomes separados por `;`
+(você e os integrantes da equipe, escritos como aparecem no Milldesk). Os campos
+`meus_abertos`/`meus_novos_hoje` passam a somar todos os nomes, e `por_agente`
+traz a quebra individual. A comparação ignora acentos e maiúsculas.
+
 Teste cada coletor individualmente antes de agendar:
 
 ```bash

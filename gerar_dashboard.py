@@ -551,17 +551,25 @@ def gerar_html() -> str:
             tom_fonte("helpdesk"),
         )
         meus = helpdesk.get("meus_abertos")
+        por_agente = helpdesk.get("por_agente") if isinstance(helpdesk.get("por_agente"), dict) else {}
+        equipe = len(por_agente) > 1
+        sub_meus = f"novos hoje: {fmt_num(helpdesk.get('meus_novos_hoje'))}"
+        if equipe and MOSTRAR_RANKING:
+            quebra = " · ".join(f"{esc(n)} {fmt_num((v or {}).get('abertos'))}" for n, v in por_agente.items())
+            sub_meus += f"<br>{quebra}"
+        elif equipe:
+            sub_meus += f" · {len(por_agente)} agentes monitorados"
         card_meus = render_card(
-            "Meus chamados abertos",
+            "Chamados abertos da equipe" if equipe else "Meus chamados abertos",
             fmt_num(meus),
-            f"novos hoje: {fmt_num(helpdesk.get('meus_novos_hoje'))}",
+            sub_meus,
             delta_txt(meus, anterior.get("meus_abertos")),
             tom_fonte("helpdesk", "ok" if meus == 0 else ""),
         )
     else:
         card_atend = render_card("Atendimentos fechados (ontem)", "—", "fonte indisponível", "", "muted")
         card_fila = render_card("Fila de chamados", "—", "fonte indisponível", "", "muted")
-        card_meus = render_card("Meus chamados abertos", "—", "fonte indisponível", "", "muted")
+        card_meus = render_card("Chamados abertos (meus/equipe)", "—", "fonte indisponível", "", "muted")
 
     if licencas:
         tom_lic = "red" if n_vencidas > 0 else ("amber" if n_vencendo > 0 else "ok")

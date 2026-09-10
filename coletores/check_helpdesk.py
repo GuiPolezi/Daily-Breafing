@@ -6,7 +6,8 @@ Fluxo:
   1. listTicketStatus     -> lista os status existentes (para você configurar)
   2. showTicketsByStatus  -> chamados de cada status "aberto"
   3. ticketsByAgent       -> contagem geral por técnico (visão da equipe)
-  4. Filtra os chamados pelo seu nome (HELPDESK_AGENT_NAME)
+  4. Filtra os chamados pelos nomes em HELPDESK_AGENT_NAME (um ou vários,
+     separados por ";" - ex.: "Seu Nome;Colega 1;Colega 2")
 
 Primeira execução: rode `python coletores/check_helpdesk.py --listar-status`
 para ver os status do seu Milldesk e preencher HELPDESK_STATUS_ABERTOS no .env.
@@ -30,7 +31,10 @@ import re
 load_dotenv()
 
 API_KEY = os.environ["HELPDESK_API_KEY"]
-AGENT_NAME = os.getenv("HELPDESK_AGENT_NAME", "")          # seu nome como aparece no Milldesk
+# Nomes como aparecem no Milldesk; vários separados por ";" (você + equipe)
+AGENT_NAMES = [
+    n.strip() for n in os.getenv("HELPDESK_AGENT_NAME", "").split(";") if n.strip()
+]
 STATUS_ABERTOS = [
     s.strip() for s in os.getenv("HELPDESK_STATUS_ABERTOS", "").split(";") if s.strip()
 ]
@@ -188,12 +192,26 @@ def main() -> None:
     for status in STATUS_ABERTOS:
         todos.extend(tickets_por_status(status))
 
-    # 2) Separa os seus
-    meus = [t for t in todos if AGENT_NAME.lower() in campo_tecnico(t).lower()] if AGENT_NAME else []
+    # 2) Separa os chamados dos agentes monitorados (você + equipe)
+    #    Comparação sem acentos e sem maiúsculas: "Fabio" casa com "Fábio".
+    def agente_do_ticket(t: dict) -> str:
+        tecnico = normalizar(campo_tecnico(t))
+        for nome in AGENT_NAMES:
+            if normalizar(nome) in tecnico:
+                return nome
+        return ""
+
+    por_agente: dict[str, list[dict]] = {nome: [] for nome in AGENT_NAMES}
+    for t in todos:
+        nome = agente_do_ticket(t)
+        if nome:
+            por_agente[nome].append(t)
+    meus = [t for lista in por_agente.values() for t in lista]
 
     def resumir(t: dict) -> dict:
         return {
             "id": t.get("id"),
+            "tecnico": agente_do_ticket(t),
             "assunto": t.get("ticket"),
             "solicitante": t.get("requester"),
             "status": t.get("_status_consultado"),
@@ -215,9 +233,18 @@ def main() -> None:
         "data": date.today().isoformat(),
         "coletado_em": datetime.now().isoformat(),
         "fila_total_abertos": len(todos),
+        # "meus_*" = soma de todos os agentes em HELPDESK_AGENT_NAME
+        "agentes_monitorados": AGENT_NAMES,
         "meus_abertos": len(meus),
         "meus_novos_hoje": sum(1 for t in meus if eh_de_hoje(t.get("start", ""))),
         "meus_tickets": [resumir(t) for t in meus],
+        "por_agente": {
+            nome: {
+                "abertos": len(lista),
+                "novos_hoje": sum(1 for t in lista if eh_de_hoje(t.get("start", ""))),
+            }
+            for nome, lista in por_agente.items()
+        },
         "contagem_por_tecnico": por_tecnico,
         "_debug_campos_do_primeiro_ticket": list(todos[0].keys()) if todos else [],
         "atendimentos_ultimo_dia_util": atendimentos_do_dia(ultimo_dia_util()),
@@ -228,7 +255,8 @@ def main() -> None:
         json.dumps(resultado, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"OK -> {SAIDA}")
-    print(f"Fila: {len(todos)} abertos | Seus: {len(meus)}")
+    detalhe = " | ".join(f"{n}: {len(l)}" for n, l in por_agente.items())
+    print(f"Fila: {len(todos)} abertos | Monitorados: {len(meus)}" + (f" ({detalhe})" if detalhe else ""))
 
 
 if __name__ == "__main__":
