@@ -833,6 +833,11 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .slides-janela{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;border-radius:var(--r-card)}
 .slides{display:flex;height:100%;transition:transform .55s var(--ease);will-change:transform}
 .slide{flex:0 0 100%;min-width:0;height:100%;display:flex}
+/* com GSAP (html.gsap) os slides ficam empilhados e a troca é um fade com profundidade; sem GSAP a faixa acima continua */
+html.gsap .slides-janela{background:var(--card);box-shadow:var(--sombra-card)}  /* superfície fixa: só o conteúdo cruza no fade */
+html.gsap .slides{display:block;position:relative;transition:none;transform:none !important}
+html.gsap .slide{position:absolute;inset:0;opacity:0;visibility:hidden;transform-origin:50% 50%}
+html.gsap .slide.ativo{opacity:1;visibility:visible}
 .card-slide{flex:1 1 auto;min-width:0;overflow:auto;gap:14px;padding:clamp(20px,3vh,36px) clamp(22px,3vw,44px);scrollbar-width:thin;scrollbar-color:rgba(40,54,24,.3) transparent}
 .card-slide:hover{transform:none;box-shadow:var(--sombra-card)}
 .card-slide .kpi-rotulo{font-size:clamp(13px,1.9vh,16px)}  /* card de leitura: rótulo não pode ser menor que o corpo */
@@ -939,6 +944,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
   .slides-janela{overflow:visible}
   .expansivel{height:auto !important;opacity:1}
   .slides{display:block;transform:none !important}
+  html.gsap .slide{position:static;opacity:1;visibility:visible}
   .slide{height:auto;margin-bottom:12px}
   .card{break-inside:avoid}
 }
@@ -1098,9 +1104,34 @@ JS_UI = """
     var setas = slider.querySelectorAll(".seta");
     var pontos = Array.prototype.slice.call(slider.querySelectorAll(".indicadores button"));
     var i = 0, n = slides.length;
+    var itensTodos = Array.prototype.slice.call(slider.querySelectorAll(".kpi-rotulo, .slide-corpo > ul > li, .slide-corpo > ol > li, .slide-corpo > p"));
+    var comGsap = function(){ return !rm && !!win.gsap && doc.documentElement.classList.contains("gsap"); };
+    // troca "fade através da profundidade": o card atual afunda e desfoca no sentido contrário, o novo nasce um pouco
+    // maior e deslocado no sentido do movimento e assenta; rótulo e tópicos do novo sobem em cascata
+    function transicao(de, para, dir){
+      if (!comGsap()) { faixa.style.transform = "translateX(" + (-para * 100) + "%)"; return; }
+      var g = win.gsap, sai = slides[de], entra = slides[para];
+      var card = entra.querySelector(".card-slide");
+      if (card) card.scrollTop = 0;
+      g.killTweensOf(slides); g.killTweensOf(itensTodos);
+      g.set(itensTodos, { clearProps: "all" });
+      g.set(slides, { clearProps: "all" });  // tudo volta ao CSS: só o .ativo fica visível
+      if (de === para || !dir) return;
+      var itens = Array.prototype.slice.call(entra.querySelectorAll(".kpi-rotulo, .slide-corpo > ul > li, .slide-corpo > ol > li, .slide-corpo > p")).slice(0, 10);
+      g.set(sai, { visibility: "visible", opacity: 1, x: 0, scale: 1 });
+      g.set(entra, { visibility: "visible", opacity: 0, x: 22 * dir, scale: 1.015, filter: "blur(2px)" });
+      g.timeline()
+        .to(sai, { opacity: 0, scale: .985, x: -18 * dir, filter: "blur(3px)", duration: .42, ease: "power2.in" }, 0)
+        .set(sai, { clearProps: "all" })
+        .to(entra, { opacity: 1, scale: 1, x: 0, filter: "blur(0px)", duration: .65, ease: "power3.out" }, .2)
+        .from(itens, { y: 14, opacity: 0, duration: .55, ease: "power3.out", stagger: .045 }, .3)
+        .set(entra, { clearProps: "all" })
+        .set(itens, { clearProps: "all" });
+    }
     function ir(k, focar){
+      var anterior = i;
       i = Math.max(0, Math.min(n - 1, k));
-      faixa.style.transform = "translateX(" + (-i * 100) + "%)";
+      var dir = i > anterior ? 1 : (i < anterior ? -1 : 0);
       slides.forEach(function(s, j){
         var on = j === i;
         s.classList.toggle("ativo", on);
@@ -1111,12 +1142,18 @@ JS_UI = """
         p.setAttribute("aria-selected", j === i ? "true" : "false");
         p.tabIndex = j === i ? 0 : -1;
       });
+      transicao(anterior, i, dir);
+      if (dir && comGsap() && pontos[i]) win.gsap.fromTo(pontos[i], { scaleX: .6 }, { scaleX: 1, duration: .5, ease: "back.out(2.5)", clearProps: "transform" });
       if (setas[0]) setas[0].disabled = i === 0;
       if (setas[1]) setas[1].disabled = i === n - 1;
       if (focar && pontos[i]) pontos[i].focus();
     }
     Array.prototype.forEach.call(setas, function(b){
-      b.addEventListener("click", function(){ ir(i + Number(b.getAttribute("data-dir") || 1)); });
+      b.addEventListener("click", function(){
+        var d = Number(b.getAttribute("data-dir") || 1);
+        if (comGsap()) win.gsap.fromTo(b, { x: 0 }, { x: 4 * d, duration: .12, yoyo: true, repeat: 1, ease: "power1.inOut", clearProps: "transform" });
+        ir(i + d);
+      });
     });
     pontos.forEach(function(p, j){ p.addEventListener("click", function(){ ir(j); }); });
     slider.addEventListener("keydown", function(e){
