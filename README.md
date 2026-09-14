@@ -29,7 +29,7 @@ verdade: **interpretar, priorizar e resumir**.
 ```bash
 cd briefing-diario
 python3 -m venv .venv && source .venv/bin/activate
-pip install requests python-dotenv
+pip install -r requirements.txt
 
 cp .env.exemplo .env
 # edite o .env com suas credenciais
