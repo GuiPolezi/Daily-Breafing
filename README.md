@@ -83,6 +83,15 @@ Ao final do `briefing.bat`, além do `relatorio.md`, são executados:
    - Se um JSON de `dados/` faltar ou estiver corrompido, a seção correspondente
      mostra "fonte indisponível" e o restante é gerado normalmente.
    - `dashboard.html` contém dados internos e está no `.gitignore`.
+   - Visual "favo de mel" (mockups em `design/`): página de tela cheia com o
+     conteúdo dentro do container amarelo; a roda do mouse, as setas do teclado
+     (↑/↓, PageUp/PageDown, Home/End) e o menu hexagonal trocam a seção com
+     transição suave. Seções: Destaques, Evolução, Eficácia, Licenças, Briefing
+     (tópicos do `relatorio.md` em slider, setas ←/→ ou swipe) e Fontes. Abaixo
+     de 900 px vira rolagem normal com as seções empilhadas e menu simples.
+   - A fonte serifada dos títulos (Instrument Serif, licença OFL) fica em
+     `assets/fonts/*.woff2` e é embutida em base64 no HTML; se os arquivos
+     faltarem, o dashboard usa a pilha serifada do sistema (Georgia etc.).
 2. `notificar.py` — dispara um toast nativo do Windows via PowerShell (sem
    dependência nova) com o resumo: atendimentos de ontem, fila e licenças em
    risco. Falha na notificação não interrompe o briefing.

@@ -1,8 +1,9 @@
 """Gera dashboard.html: painel estático e autocontido do briefing diário.
 
 Lê historico/metricas.jsonl, os JSONs de dados/ e relatorio.md e escreve um
-único arquivo HTML com CSS, dados e Chart.js embutidos (funciona offline e
-copiado sozinho para qualquer pasta). Nunca lança exceção por dado ausente:
+único arquivo HTML com CSS, dados, Chart.js e a fonte serifada embutidos
+(funciona offline e copiado sozinho para qualquer pasta). Visual "favo de mel"
+(design/): tela cheia, navegação por seções na roda do mouse, menu hexagonal. Nunca lança exceção por dado ausente:
 cada seção degrada para "fonte indisponível" e o restante é gerado.
 
 Configuração (.env):
@@ -12,8 +13,10 @@ Configuração (.env):
 
 from __future__ import annotations
 
+import base64
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -194,7 +197,7 @@ def status_fonte(dados: dict | None, erro: str | None, agora: datetime) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# Markdown -> HTML (conversão manual básica)
+# Markdown -> HTML (conversão manual básica, com listas aninhadas) e slides
 # ----------------------------------------------------------------------------
 def inline_md(texto: str) -> str:
     t = esc(texto)
@@ -204,16 +207,12 @@ def inline_md(texto: str) -> str:
     return t
 
 
-def markdown_para_html(md: str) -> str:
+def markdown_para_html(md: str, base: int = 3) -> str:
+    """Converte um trecho de markdown: títulos (a partir de h{base}), parágrafos,
+    listas com sub-itens (por indentação) e linhas de continuação."""
     saida: list[str] = []
-    lista_aberta: str | None = None  # "ul" | "ol"
+    pilha: list[tuple[int, str]] = []  # (indentação, "ul"|"ol") das listas abertas; o <li> fica aberto
     paragrafo: list[str] = []
-
-    def fechar_lista():
-        nonlocal lista_aberta
-        if lista_aberta:
-            saida.append(f"</{lista_aberta}>")
-            lista_aberta = None
 
     def fechar_paragrafo():
         nonlocal paragrafo
@@ -221,52 +220,100 @@ def markdown_para_html(md: str) -> str:
             saida.append("<p>" + " ".join(paragrafo) + "</p>")
             paragrafo = []
 
+    def fechar_listas(ate_indent: int = -1):
+        while pilha and pilha[-1][0] > ate_indent:
+            _, tag = pilha.pop()
+            saida.append(f"</li></{tag}>")
+
     for linha in md.splitlines():
         bruto = linha.rstrip()
         if not bruto.strip():
-            fechar_paragrafo()
-            fechar_lista()
+            fechar_paragrafo()  # linha vazia não fecha a lista (o briefing espaça itens)
             continue
         m = re.match(r"^(#{1,6})\s+(.*)$", bruto)
         if m:
             fechar_paragrafo()
-            fechar_lista()
-            nivel = min(len(m.group(1)) + 1, 4)  # h1 do md vira h2 (o h1 é do dashboard)
+            fechar_listas()
+            nivel = min(len(m.group(1)) + base - 1, 6)
             saida.append(f"<h{nivel}>{inline_md(m.group(2))}</h{nivel}>")
-            continue
-        m = re.match(r"^\s*[-*+]\s+(.*)$", bruto)
-        if m:
-            fechar_paragrafo()
-            if lista_aberta != "ul":
-                fechar_lista()
-                saida.append("<ul>")
-                lista_aberta = "ul"
-            saida.append(f"<li>{inline_md(m.group(1))}</li>")
-            continue
-        m = re.match(r"^\s*\d+[.)]\s+(.*)$", bruto)
-        if m:
-            fechar_paragrafo()
-            if lista_aberta != "ol":
-                fechar_lista()
-                saida.append("<ol>")
-                lista_aberta = "ol"
-            saida.append(f"<li>{inline_md(m.group(1))}</li>")
             continue
         if re.match(r"^\s*(-{3,}|\*{3,})\s*$", bruto):
             fechar_paragrafo()
-            fechar_lista()
+            fechar_listas()
             saida.append("<hr>")
             continue
-        if lista_aberta and bruto.startswith("  "):
-            # continuação de item de lista
-            saida[-1] = saida[-1][:-5] + " " + inline_md(bruto.strip()) + "</li>"
+        m = re.match(r"^(\s*)([-*+]|\d+[.)])\s+(.*)$", bruto)
+        if m:
+            fechar_paragrafo()
+            indent = len(m.group(1).expandtabs(4))
+            tag = "ol" if m.group(2)[0].isdigit() else "ul"
+            if pilha and indent > pilha[-1][0]:
+                saida.append(f"<{tag}>")  # lista aninhada dentro do item aberto
+                pilha.append((indent, tag))
+            else:
+                fechar_listas(indent)
+                if pilha and pilha[-1][0] == indent:
+                    if pilha[-1][1] == tag:
+                        saida.append("</li>")
+                    else:
+                        _, anterior = pilha.pop()
+                        saida.append(f"</li></{anterior}><{tag}>")
+                        pilha.append((indent, tag))
+                else:
+                    saida.append(f"<{tag}>")
+                    pilha.append((indent, tag))
+            saida.append(f"<li>{inline_md(m.group(3))}")
             continue
-        fechar_lista()
+        if pilha and bruto[:1].isspace():
+            saida.append(" " + inline_md(bruto.strip()))  # continuação do item
+            continue
+        fechar_listas()
         paragrafo.append(inline_md(bruto.strip()))
 
     fechar_paragrafo()
-    fechar_lista()
+    fechar_listas()
     return "\n".join(saida)
+
+
+def dividir_briefing(md: str) -> tuple[str | None, list[dict]]:
+    """Separa o relatório em (título do h1, slides). Um slide por título '## '.
+    Sem '## ', devolve um único slide com todo o conteúdo."""
+    titulo_h1: str | None = None
+    slides: list[dict] = []
+    atual: str | None = None
+    buffer: list[str] = []
+
+    def empurrar():
+        corpo = "\n".join(buffer).strip("\n")
+        if atual is not None or corpo.strip():
+            slides.append({"titulo": atual, "md": corpo})
+
+    for linha in md.splitlines():
+        m1 = re.match(r"^#\s+(.*)$", linha)
+        if m1 and titulo_h1 is None and atual is None and not any(l.strip() for l in buffer):
+            titulo_h1 = m1.group(1).strip()
+            continue
+        m2 = re.match(r"^##\s+(.*)$", linha)
+        if m2:
+            empurrar()
+            atual = m2.group(1).strip()
+            buffer = []
+            continue
+        buffer.append(linha)
+    empurrar()
+
+    for s in slides:
+        t = re.sub(r"^\s*\d+\s*[.)\-–—:]\s*", "", s["titulo"] or "").strip() or "Briefing"
+        s["titulo"] = t[:1].upper() + t[1:]
+    return titulo_h1, slides
+
+
+def data_do_briefing(titulo_h1: str | None) -> str | None:
+    """Extrai '11/09/2026 (sex) 08:13' de '# Briefing diário — 11/09/2026 (sex) 08:13'."""
+    if not titulo_h1:
+        return None
+    m = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4}.*)$", titulo_h1)
+    return m.group(1).strip() if m else None
 
 
 # ----------------------------------------------------------------------------
@@ -373,302 +420,743 @@ def classificar_licenca(item: dict) -> tuple[str, str]:
 
 
 # ----------------------------------------------------------------------------
-# Renderização
+# Renderização — identidade visual "favo de mel" (mockups em design/)
 # ----------------------------------------------------------------------------
+FONTES_DIR = ASSETS / "fonts"
+# Fonte serifada display (Instrument Serif, OFL). Embutida em base64 quando o
+# arquivo existe em assets/fonts; sem ele, cai na pilha de sistema (Georgia…).
+FONTE_SERIF = [("normal", "InstrumentSerif-Regular.woff2"), ("italic", "InstrumentSerif-Italic.woff2")]
+
+
+def carregar_fontes_css() -> str:
+    blocos = []
+    for estilo, nome in FONTE_SERIF:
+        try:
+            dados = (FONTES_DIR / nome).read_bytes()
+        except OSError:
+            continue
+        if not dados:
+            continue
+        b64 = base64.b64encode(dados).decode("ascii")
+        blocos.append(
+            "@font-face{font-family:'Instrument Serif';font-style:%s;font-weight:400;font-display:swap;"
+            "src:url(data:font/woff2;base64,%s) format('woff2')}" % (estilo, b64)
+        )
+    return "\n".join(blocos)
+
+
+# --- Menu favo de mel -------------------------------------------------------
+# Malha "pointy-top" rotacionada -15,25° (medida nos mockups). Eixo u a 44,75°,
+# eixo v a 104,75°; coordenadas (u, v) das células, com (0,0) = Fontes.
+FAVO_ORDEM = [
+    ("destaques", "Destaques"), ("evolucao", "Evolução"), ("eficacia", "Eficácia"),
+    ("licencas", "Licenças"), ("briefing", "Briefing"), ("fontes", "Fontes"),
+]
+FAVO_NAV = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia",
+            (1, -1): "licencas", (0, -1): "briefing", (0, 0): "fontes"}
+FAVO_CHEIO = [(-2, 1), (-2, 2), (-1, 0), (-1, 1), (-1, 2), (0, -2), (0, -1), (0, 0), (0, 1),
+              (1, -2), (1, -1), (1, 0), (1, 1), (2, -3), (2, -2), (2, -1), (3, -2), (3, -1)]
+FAVO_COMPACTO = [(0, -1), (1, -1), (-1, 0), (0, 0), (1, 0), (-1, 1), (0, 1), (2, -1), (-2, 1)]
+FAVO_ANGULO = 44.75
+
+
+def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe: str) -> tuple[str, float]:
+    """SVG do favo. Devolve (svg, altura em px na escala 1:1)."""
+    rotulos = dict(FAVO_ORDEM)
+    a, b = math.radians(FAVO_ANGULO), math.radians(FAVO_ANGULO + 60)
+    r_nav = (passo - 4) / math.sqrt(3)  # 4 px de vão entre células vizinhas
+    r_deco = r_nav * 0.9                # decorativos um pouco menores: os de navegação sobressaem
+    margem = 10.0
+    centros = {c: (passo * (c[0] * math.cos(a) + c[1] * math.cos(b)),
+                   passo * (c[0] * math.sin(a) + c[1] * math.sin(b))) for c in celulas}
+
+    def vertices(cx: float, cy: float, r: float) -> list[tuple[float, float]]:
+        return [(cx + r * math.cos(math.radians(FAVO_ANGULO - 30 + 60 * k)),
+                 cy + r * math.sin(math.radians(FAVO_ANGULO - 30 + 60 * k))) for k in range(6)]
+
+    todos = [p for (cx, cy) in centros.values() for p in vertices(cx, cy, r_nav)]
+    min_x, min_y = min(p[0] for p in todos), min(p[1] for p in todos)
+    largura = max(p[0] for p in todos) - min_x + 2 * margem
+    altura = max(p[1] for p in todos) - min_y + 2 * margem
+
+    def pontos(cx: float, cy: float, r: float) -> str:
+        return " ".join(f"{x - min_x + margem:.1f},{y - min_y + margem:.1f}" for x, y in vertices(cx, cy, r))
+
+    deco, nav = [], []
+    for c, (cx, cy) in centros.items():
+        alvo = FAVO_NAV.get(c)
+        if alvo is None:
+            deco.append(f'<polygon class="cel deco" points="{pontos(cx, cy, r_deco)}"/>')
+        else:
+            tx, ty = cx - min_x + margem, cy - min_y + margem
+            nav.append(
+                f'<a class="cel nav" href="#{alvo}" data-alvo="{alvo}" aria-label="Ir para {esc(rotulos[alvo])}">'
+                f'<polygon points="{pontos(cx, cy, r_nav)}"/>'
+                f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="{fonte:g}" text-anchor="middle" dominant-baseline="central">{esc(rotulos[alvo])}</text></a>'
+            )
+    svg = (f'<svg class="favo-svg {classe}" viewBox="0 0 {largura:.0f} {altura:.0f}" '
+           f'style="--favo-h:{altura:.0f}px" aria-hidden="false">' + "".join(deco) + "".join(nav) + "</svg>")
+    return svg, altura
+
+
+ABELHA_SVG = """<svg class="abelha" viewBox="0 0 100 104" aria-hidden="true" focusable="false">
+<defs>
+<linearGradient id="mel-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbc93a"/><stop offset=".55" stop-color="#f5a11f"/><stop offset="1" stop-color="#ef6f1a"/></linearGradient>
+</defs>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<g stroke="#f9c04a" stroke-opacity=".5">
+<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke-width="8.5"/>
+<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke-width="8.5"/>
+<ellipse cx="50" cy="66" rx="12.5" ry="25" stroke-width="8.5"/>
+</g>
+<g stroke="url(#mel-g)">
+<path d="M44 22c-3-6-8-9-14-11" stroke-width="3.4"/>
+<path d="M56 22c3-6 8-9 14-11" stroke-width="3.4"/>
+<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke-width="5"/>
+<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke-width="5"/>
+<ellipse cx="50" cy="66" rx="12.5" ry="25" stroke-width="5.6"/>
+<path d="M41 37q9-7 18 0" stroke-width="3.6"/>
+</g>
+<g stroke="#fff1b8" stroke-opacity=".65" stroke-width="1.4">
+<path d="M40 60c-1 8 2 18 9 24"/><path d="M12 39c4-5 12-8 20-7"/><path d="M88 39c-4-5-12-8-20-7"/>
+</g>
+</g>
+<g fill="url(#mel-g)"><circle cx="29.5" cy="10" r="3.4"/><circle cx="70.5" cy="10" r="3.4"/><ellipse cx="50" cy="27" rx="8.6" ry="7.6"/></g>
+</svg>"""
+
+CHEVRON_SVG = ('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" '
+               'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>')
+
+
+# --- CSS ----------------------------------------------------------------------
 CSS = """
 :root{
-  --bg:#f5f5f7;--surface:#ffffff;--line:rgba(0,0,0,.06);--line-2:rgba(0,0,0,.11);--grid:#ececf1;
-  --ink:#1d1d1f;--ink-2:#6e6e73;--ink-3:#86868b;
-  --accent:#0071e3;--serie-1:#2a78d6;--serie-2:#eb6834;
-  --ok:#1f9d55;--ok-ink:#177245;--ok-bg:#e6f6ec;
-  --amber:#9a6700;--amber-bg:#fff3d6;--amber-line:#f5b400;
-  --red:#c1272d;--red-bg:#fdecec;--red-line:#e5484d;
-  --orange:#b4531e;--orange-bg:#fdeee4;
-  --r:20px;--r-sm:12px;
-  --shadow:0 1px 2px rgba(0,0,0,.03),0 10px 30px rgba(0,0,0,.05);
-  --shadow-hover:0 2px 4px rgba(0,0,0,.04),0 20px 48px rgba(0,0,0,.09);
-  --ease:cubic-bezier(.2,.7,.2,1);
+  /* paleta extraída dos mockups (design/) */
+  --creme:#f9e0a3;--mel:#de9628;--mel-claro:#fdce4c;--mel-hover:#efb13d;--mel-deco:#e3a139;
+  --oliva:#606c38;--oliva-escuro:#283618;--verde:#b8d86e;--verde-suave:#adcb67;--verde-texto:#9bb45c;
+  --marfim:#fefae0;--titulo:#f6e3c5;--carimbo:#433c2c;--tinta:#1f1f1f;--traco:#f3991f;
+  --vermelho:#e0261b;--verm-bg:#fdecec;--verm-ink:#c1272d;--ambar-bg:#fff3d6;--ambar-ink:#9a6700;--bom:#3f6d17;
+  --azul:#277fae;--rubro:#e0301e;--rubro-area:#a33e20;
+  --tabela-bg:#fff;--tabela-cabeca:#fafafa;--tabela-linha:#ececec;--tabela-ink:#222;--tabela-muted:#8a8a8a;--tabela-hover:#fff8e8;
+  --serif:"Instrument Serif","Bodoni MT",Didot,"Playfair Display",Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI Variable","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --ease:cubic-bezier(.22,.61,.36,1);--ease-out:cubic-bezier(.16,1,.3,1);
+  /* ritmo: escala 1.25 a partir de 15px (12 / 15 / 19 / 24 / 30 / 37 / 47 / 58 / 73) */
+  --t-meta:12.5px;--t-corpo:15px;
+  --t-hero:clamp(38px,min(7.6vh,4.6vw),82px);--t-num:clamp(42px,min(7vh,4.2vw),72px);--t-num-2:clamp(30px,min(5vh,3vw),52px);
+  --t-card:clamp(17px,min(2.6vh,1.35vw),24px);
+  --topo-h:clamp(180px,29vh,330px);
+  --margem:clamp(14px,1.4vw,24px);--pad:clamp(18px,2.2vw,36px);--gap:clamp(14px,1.8vw,28px);--pad-card:clamp(18px,2vw,30px);
+  --r-colmeia:clamp(30px,3vw,48px);--r-card:clamp(24px,2.4vw,36px);
 }
-*{box-sizing:border-box}
-html{color-scheme:light;scroll-behavior:smooth;-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI Variable","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
-  -webkit-font-smoothing:antialiased;padding-block:0 40px;padding-inline:0;overflow-x:hidden}
-.wrap{max-width:1180px;margin:0 auto;padding-inline:clamp(16px,3vw,28px)}
+*,*::before,*::after{box-sizing:border-box}
+html{color-scheme:light;-webkit-text-size-adjust:100%;height:100%}
+body{margin:0;min-height:100%;overflow:hidden;background:var(--creme);color:var(--tinta);font:var(--t-corpo)/1.5 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+h1,h2,h3,h4,p,ul,ol,figure{margin:0}
+ul,ol{padding:0;list-style:none}
+button{font:inherit;color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--oliva-escuro);outline-offset:3px}
+.card :focus-visible{outline-color:var(--marfim)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.pular{position:absolute;left:12px;top:-64px;z-index:100;background:var(--oliva-escuro);color:var(--marfim);padding:8px 16px;border-radius:999px;text-decoration:none;font-weight:700}
+.pular:focus{top:12px}
 
-/* fundo ambiente */
-.ambient{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
-.ambient i{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;will-change:transform}
-.ambient .b1{width:520px;height:520px;left:-140px;top:-160px;background:#cfe1ff;animation:drift 22s ease-in-out infinite}
-.ambient .b2{width:460px;height:460px;right:-120px;top:120px;background:#ebe0ff;animation:drift 26s ease-in-out infinite reverse}
-.ambient .b3{width:380px;height:380px;left:38%;top:55%;background:#ffe9d6;opacity:.4;animation:drift 30s ease-in-out infinite}
+/* ---- palco: fundo, header e container ficam parados; só o conteúdo troca ---- */
+.palco{display:flex;flex-direction:column;height:100vh;height:100dvh;padding:0 var(--margem) var(--margem)}
+.topo{flex:0 0 auto;height:var(--topo-h);display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 clamp(8px,1.6vw,28px)}
+.marca{display:flex;align-items:center;gap:clamp(12px,1.6vw,28px);text-decoration:none;color:inherit}
+.abelha{height:clamp(72px,14vh,150px);width:auto;flex:0 0 auto;filter:drop-shadow(0 6px 10px rgba(222,150,40,.25))}
+.wordmark{font:800 clamp(26px,min(4.4vh,2.4vw),42px)/1.05 var(--sans);letter-spacing:-.02em;color:#000}
+.wordmark .w{display:block;position:relative;width:max-content}
+.wordmark .w::after{content:"";position:absolute;left:0;top:53%;height:.075em;width:var(--traco-w,100%);background:var(--traco);border-radius:2px;pointer-events:none}
+.carimbo{flex:0 0 auto;margin:0 0 8px calc(var(--pad) - 2px);font-size:var(--t-meta);font-weight:700;color:var(--carimbo);letter-spacing:.01em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.carimbo .sep{opacity:.55}
+.carimbo .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:2px 10px;border-radius:999px;text-decoration:none}
+.carimbo .aviso.grave{background:var(--verm-bg);color:var(--verm-ink)}
 
-/* barra superior */
-.bar{position:sticky;top:0;z-index:20;background:rgba(245,245,247,.72);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
-.bar .in{max-width:1180px;margin:0 auto;padding:10px clamp(16px,3vw,28px);display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.01em;white-space:nowrap}
-.brand .logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#5ac8fa,#0071e3 55%,#5e5ce6);box-shadow:0 2px 6px rgba(0,113,227,.3)}
-nav.seg{display:flex;gap:2px;padding:3px;border-radius:999px;background:rgba(0,0,0,.05);margin-inline:auto;max-width:100%;overflow-x:auto;scrollbar-width:none}
-nav.seg::-webkit-scrollbar{display:none}
-nav.seg a{padding:6px 14px;border-radius:999px;color:var(--ink-2);text-decoration:none;font-size:.84rem;font-weight:500;white-space:nowrap;transition:color .3s var(--ease),background .3s var(--ease),box-shadow .3s var(--ease)}
-nav.seg a:hover{color:var(--ink)}
-nav.seg a.active{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.1)}
-.stamp{font-size:.78rem;color:var(--ink-2);padding:6px 12px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.65);white-space:nowrap;font-variant-numeric:tabular-nums}
-@media(max-width:720px){.bar .in{justify-content:space-between}nav.seg{order:3;flex-basis:100%;margin-inline:0}}
+/* ---- menu favo de mel ---- */
+.favo{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.favo-svg{height:min(var(--favo-h),calc(var(--topo-h) - 12px));width:auto;overflow:visible;display:block}
+.favo-cheio{display:none}
+@media (min-height:960px) and (min-width:1180px){.favo-cheio{display:block}.favo-compacto{display:none}}
+.cel.nav polygon{fill:var(--mel);transition:fill .2s var(--ease)}
+.cel.deco{fill:var(--mel-deco)}
+.cel.nav{cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .2s var(--ease),filter .2s var(--ease);outline:none}
+.cel.nav text{fill:var(--oliva-escuro);font-family:var(--sans);font-weight:700;letter-spacing:-.01em;pointer-events:none;user-select:none}
+.cel.nav:hover,.cel.nav:focus-visible{transform:scale(1.09);filter:drop-shadow(0 4px 6px rgba(67,60,44,.35))}
+.cel.nav:hover polygon,.cel.nav:focus-visible polygon{fill:var(--mel-hover)}
+.cel.nav:focus-visible polygon{stroke:var(--oliva-escuro);stroke-width:2}
+.cel.nav.ativa polygon{fill:var(--mel-claro)}
+.cel.nav.ativa{filter:drop-shadow(0 3px 5px rgba(67,60,44,.3))}
+.menu-simples{display:none}
 
-/* hero */
-.hero{padding:46px 0 26px}
-.hero h1{font-size:clamp(1.9rem,4.2vw,2.9rem);letter-spacing:-.035em;font-weight:700;margin:0;line-height:1.08;animation:fadeUp .8s var(--ease) both}
-.hero p{color:var(--ink-2);margin:10px 0 0;font-size:1.05rem;animation:fadeUp .8s var(--ease) .12s both}
+/* ---- container amarelo e seções ---- */
+.colmeia{position:relative;flex:1 1 auto;min-height:0;background:var(--mel);border-radius:var(--r-colmeia);overflow:hidden;isolation:isolate}
+.secao{position:absolute;inset:0;padding:var(--pad);display:flex;flex-direction:column;gap:var(--gap);opacity:0;visibility:hidden;transform:translateY(34px);transition:opacity .5s var(--ease),transform .65s var(--ease),visibility 0s linear .65s;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(40,54,24,.35) transparent;outline:none}
+.secao.antes{transform:translateY(-34px)}
+.secao.ativa{opacity:1;visibility:visible;transform:none;transition-delay:.06s,.06s,0s;z-index:1}
+.titulo-secao{font:400 var(--t-hero)/.95 var(--serif);color:var(--titulo);letter-spacing:-.01em;text-wrap:balance}
+.titulo-secao .l{display:block}
+.subtitulo{font:400 clamp(18px,2.4vh,26px)/1.2 var(--serif);color:rgba(246,227,197,.8);margin-top:6px}
+.secao-cabeca{flex:0 0 auto}
+.secao-cabeca.centro{text-align:center}
+.secao-cabeca.dividida{display:grid;grid-template-columns:1fr auto;align-items:end;gap:var(--gap)}
+.secao-cabeca.dividida .titulo-secao{grid-column:2;grid-row:1}
+.secao-cabeca.dividida .lado{grid-column:1;grid-row:1}
+.cabeca-briefing{display:flex;justify-content:space-between;align-items:baseline;gap:var(--gap);flex-wrap:wrap}
+.carimbo-briefing{font:400 clamp(20px,3vh,30px)/1 var(--serif);color:var(--titulo);white-space:nowrap}
+.titulo-escuro{font:700 clamp(15px,1.9vh,18px)/1.3 var(--sans);color:var(--oliva-escuro)}
+.legenda-escura{font-size:14px;font-weight:600;color:rgba(40,54,24,.62)}
+.legenda-escura b{color:var(--oliva-escuro)}
+.nota-escura{flex:0 0 auto;font-size:13px;font-weight:600;color:rgba(40,54,24,.7)}
+.vazio{flex:1 1 auto;display:flex;align-items:center;justify-content:center;text-align:center;font:400 clamp(20px,3vh,28px)/1.3 var(--serif);color:rgba(246,227,197,.85);padding:var(--pad)}
 
-/* aviso */
-.banner{display:flex;gap:12px;align-items:flex-start;padding:14px 18px;border-radius:16px;margin:0 0 22px;font-size:.93rem;line-height:1.5;border:1px solid;animation:fadeUp .8s var(--ease) .2s both}
-.banner .ico{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:.85rem;font-weight:700;flex:none;background:color-mix(in srgb,currentColor 14%,transparent)}
-.banner.red{background:rgba(253,236,236,.85);border-color:rgba(229,72,77,.35);color:var(--red)}
-.banner.amber{background:rgba(255,243,214,.85);border-color:rgba(245,180,0,.45);color:var(--amber)}
-.banner.muted{background:rgba(255,255,255,.7);border-color:var(--line-2);color:var(--ink-2)}
+/* ---- cards ---- */
+.card{background:var(--oliva);color:var(--marfim);border-radius:var(--r-card);padding:var(--pad-card);display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;position:relative;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
+.card:hover{transform:translateY(-3px);box-shadow:0 18px 36px -12px rgba(40,54,24,.5)}
+@keyframes entrar{from{opacity:0;transform:translateY(16px)}}
+.card-medida{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.card-titulo{font:700 var(--t-card)/1.15 var(--sans);color:var(--verde);letter-spacing:-.01em}
+.card-titulo small{display:block;font-size:.8em;color:var(--verde-texto);font-weight:600;margin-top:.2em}
+.card-numero{font:italic 800 var(--t-num)/.9 var(--sans);color:var(--oliva-escuro);letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap;padding-right:.06em}
+.card-numero.menor{font-size:var(--t-num-2)}
+.card-numero-bloco{text-align:right}
+.card-sub{font-size:clamp(14px,1.9vh,18px);font-weight:600;color:var(--verde-texto)}
+.card-rodape{margin-top:auto;text-align:center;font-size:var(--t-meta);font-weight:600;color:rgba(254,250,224,.55)}
+.badges{display:flex;flex-wrap:wrap;gap:8px}
+.badge{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;background:var(--marfim);color:var(--vermelho);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;line-height:1.4;white-space:nowrap}
+.badge b{font-size:14px;font-weight:700}
+.badge.bom{color:var(--bom)}
+.badge.neutro{color:var(--oliva)}
+.badge.aviso{background:var(--ambar-bg);color:var(--ambar-ink)}
+.badge.grave{background:var(--verm-bg);color:var(--verm-ink)}
+.quebra{font-weight:700;color:var(--verde);font-size:clamp(14px,1.9vh,17px);display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:auto}
+.quebra .sep{color:rgba(184,216,110,.55)}
 
-/* seções */
-section{margin:38px 0;scroll-margin-top:76px}
-.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin:0 0 14px}
-.sec-head h2{font-size:1.4rem;margin:0;font-weight:700;letter-spacing:-.025em}
-.sec-head .kicker{font-size:.86rem;color:var(--ink-3)}
+/* Destaques */
+.grade-destaques{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto 1fr;gap:var(--gap)}
+.grade-destaques .card{min-height:auto}
+.grade-destaques .titulo-secao{align-self:start;padding-top:.12em}
+.card-largo{grid-column:2 / span 2}
+.card-largo .card-topo{display:grid;grid-template-columns:1fr auto;gap:var(--gap);align-items:start}
+.card-largo .card-medida{justify-content:flex-start;gap:clamp(16px,2vw,32px)}
+.card-largo .card-medida.secundaria{padding-right:clamp(0px,1vw,16px)}
 
-/* cards de destaque */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:14px}
-.card{position:relative;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px 18px;box-shadow:var(--shadow);overflow:hidden;
-  transition:transform .5s var(--ease),box-shadow .5s var(--ease),border-color .3s}
-.card:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover)}
-.card .label{display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--ink-2);letter-spacing:.01em;position:relative;z-index:1}
-.card .label::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ink-3);opacity:.45;flex:none}
-.card.ok .label::before{background:var(--ok);opacity:1;box-shadow:0 0 0 3px rgba(31,157,85,.14)}
-.card.amber .label::before{background:var(--amber-line);opacity:1;box-shadow:0 0 0 3px rgba(245,180,0,.18)}
-.card.red .label::before{background:var(--red-line);opacity:1;animation:pulse 2.4s ease-in-out infinite}
-.card.red{border-color:rgba(229,72,77,.3)}
-.card.amber{border-color:rgba(245,180,0,.35)}
-.card::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .4s}
-.card.red::after{opacity:1;background:radial-gradient(120% 90% at 100% 0%,rgba(229,72,77,.12),transparent 60%)}
-.card.amber::after{opacity:1;background:radial-gradient(120% 90% at 100% 0%,rgba(245,180,0,.16),transparent 60%)}
-.card .value{font-size:2.5rem;font-weight:700;letter-spacing:-.035em;line-height:1.1;margin:10px 0 6px;font-variant-numeric:tabular-nums;position:relative;z-index:1}
-.card .value .unit{font-size:1rem;font-weight:500;color:var(--ink-2);letter-spacing:0;margin-left:4px}
-.card.muted .value{color:var(--ink-3)}
-.card .sub{font-size:.86rem;color:var(--ink-2);line-height:1.45;position:relative;z-index:1}
-.pill{display:inline-flex;align-items:center;gap:4px;margin-top:10px;padding:3px 10px;border-radius:999px;font-size:.76rem;font-weight:600;background:rgba(0,0,0,.05);color:var(--ink-2);position:relative;z-index:1;font-variant-numeric:tabular-nums}
-.pill.good{background:var(--ok-bg);color:var(--ok-ink)}
-.pill.bad{background:var(--red-bg);color:var(--red)}
+/* Evolução */
+.graficos{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+.card-grafico{gap:4px}
+.card-titulo-md{font:700 clamp(16px,2.2vh,20px)/1.2 var(--sans);color:var(--verde)}
+.card-legenda{font-size:13.5px;font-weight:600;color:var(--verde-texto);margin-bottom:8px}
+.grafico-caixa{position:relative;flex:1 1 auto;min-height:120px;transition:height .5s var(--ease)}
+.grafico-caixa canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
+.secao.aberto .graficos{flex:0 0 auto}
+.serie{flex:0 0 auto;display:flex;flex-direction:column}
+.acoes{flex:0 0 auto}
+.pilula{background:var(--verde);color:var(--oliva);font-weight:700;font-size:14px;border:0;border-radius:999px;padding:10px 20px;display:inline-flex;gap:10px;align-items:center;cursor:pointer;transition:transform .2s var(--ease),box-shadow .2s var(--ease),background .2s var(--ease)}
+.pilula:hover{background:#c4e07f;transform:translateY(-2px);box-shadow:0 10px 20px -10px rgba(40,54,24,.6)}
+.pilula svg{transition:transform .35s var(--ease)}
+.pilula[aria-expanded=true] svg{transform:rotate(180deg)}
+.expansivel{flex:0 0 auto;position:relative;overflow:hidden;height:0;opacity:0;transition:height .55s var(--ease),opacity .4s var(--ease)}
+.expansivel.aberto{opacity:1}
+.expansivel-pad{padding-top:var(--gap)}
+.tabela-serie{width:100%;border-collapse:separate;border-spacing:0;background:var(--oliva);border-radius:24px;overflow:hidden;color:var(--verde);font-weight:700;font-size:15px}
+.tabela-serie th{background:var(--oliva-escuro);text-align:left;padding:16px 26px;font-size:13px;letter-spacing:.06em;text-transform:uppercase}
+.tabela-serie td{padding:14px 26px;border-top:1px solid rgba(40,54,24,.35);font-variant-numeric:tabular-nums}
+.tabela-serie tbody tr:first-child td{border-top:0}
+.tabela-serie .c{text-align:center}
+.tabela-serie .d{text-align:right}
+.tabela-serie tbody tr{transition:background .2s}
+.tabela-serie tbody tr:hover{background:rgba(184,216,110,.1)}
 
-/* painéis */
-.panel{min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;box-shadow:var(--shadow);transition:box-shadow .5s var(--ease)}
-.panel:hover{box-shadow:var(--shadow-hover)}
-.panel h3{margin:0;font-size:1.02rem;font-weight:600;letter-spacing:-.01em}
-.panel .hint{font-size:.82rem;color:var(--ink-3);margin:3px 0 14px}
-.charts{display:grid;gap:14px}
-@media(min-width:840px){.charts.two{grid-template-columns:1fr 1fr}}
-.chart-box{position:relative;height:260px;width:100%}
-.chart-box.tall{height:auto;min-height:220px}
-.empty{color:var(--ink-3);padding:14px 0;margin:0;text-align:center}
+/* Eficácia */
+.card-ranking{flex:1 1 auto;min-height:0;padding:clamp(20px,3vh,40px) clamp(20px,3vw,48px);overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(254,250,224,.3) transparent}
+.card-ranking .ranking{min-height:max(100%,calc(var(--n) * 40px + 30px))}
+.ranking{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:max-content minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;column-gap:clamp(14px,2vw,26px)}
+.nomes{grid-row:1;grid-column:1;display:flex;flex-direction:column;justify-content:space-evenly;text-align:right}
+.nomes span{height:clamp(24px,4.2vh,34px);line-height:clamp(24px,4.2vh,34px);font-weight:700;font-size:clamp(14px,2.2vh,18px);color:var(--marfim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:clamp(120px,14vw,240px)}
+.trilhos{grid-row:1;grid-column:2;position:relative;display:flex;flex-direction:column;justify-content:space-evenly}
+.grade-ranking{position:absolute;inset:0;background-image:linear-gradient(to right,rgba(184,216,110,.28) 1px,transparent 1px);background-size:calc(100% / var(--divs)) 100%;background-repeat:repeat-x;box-shadow:inset -1px 0 rgba(184,216,110,.28);pointer-events:none}
+.linha{position:relative;display:flex;align-items:center;gap:10px;height:clamp(24px,4.2vh,34px)}
+.barra{display:block;height:100%;width:0;background:var(--verde);border-radius:999px;transition:width .9s var(--ease) calc(.2s + var(--i,0)*90ms)}
+.secao.ativa .barra{width:calc(var(--v) / var(--max) * 100%)}
+.valor{font-weight:700;color:var(--mel);font-size:clamp(13px,2vh,16px);opacity:0;transition:opacity .4s calc(.7s + var(--i,0)*90ms);font-variant-numeric:tabular-nums}
+.secao.ativa .valor{opacity:1}
+.eixo{grid-row:2;grid-column:2;position:relative;height:30px}
+.eixo span{position:absolute;left:calc(var(--p) * 100%);transform:translateX(-50%);top:8px;font-size:13px;font-weight:600;color:rgba(254,250,224,.6);font-variant-numeric:tabular-nums}
 
-/* detalhes (tabelas colapsáveis) */
-details.dados{margin-top:12px}
-details.dados summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:.82rem;font-weight:500;color:var(--accent);background:rgba(0,113,227,.08);transition:background .3s,transform .3s var(--ease);user-select:none}
-details.dados summary::-webkit-details-marker{display:none}
-details.dados summary:hover{background:rgba(0,113,227,.14)}
-details.dados summary::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .35s var(--ease)}
-details.dados[open] summary::after{transform:translateY(1px) rotate(-135deg)}
-details.dados[open]>.table-wrap{animation:fadeUp .45s var(--ease)}
-details.dados>.table-wrap{margin-top:12px}
+/* Licenças */
+.tabela-clara{flex:1 1 auto;min-height:0;position:relative;overflow:auto;background:var(--tabela-bg);border-radius:20px;box-shadow:0 12px 32px -16px rgba(40,54,24,.5);scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.2) transparent}
+.tabela-lic{width:100%;border-collapse:separate;border-spacing:0;color:var(--tabela-ink);font-size:14px}
+.tabela-lic th{position:sticky;top:0;z-index:1;background:var(--tabela-cabeca);color:var(--tabela-muted);font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:14px 18px;border-bottom:1px solid var(--tabela-linha)}
+.tabela-lic td{padding:12px 18px;border-bottom:1px solid var(--tabela-linha);vertical-align:middle}
+.tabela-lic tbody tr{transition:background .15s}
+.tabela-lic tbody tr:hover{background:var(--tabela-hover)}
+.tabela-lic .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tabela-lic .urgente{font-weight:700;color:var(--verm-ink)}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.vencida{background:var(--verm-bg);color:var(--verm-ink)}
+.pill.vencendo{background:var(--ambar-bg);color:var(--ambar-ink)}
 
-/* tabelas */
-.table-wrap{overflow-x:auto;border-radius:var(--r-sm);border:1px solid var(--line);background:#fff}
-table{border-collapse:separate;border-spacing:0;width:100%;font-size:.9rem}
-table.lic{min-width:600px}
-th{text-align:left;background:#fafafa;font-size:.73rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
-tbody tr:last-child td{border-bottom:0}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-tbody tr{transition:background .25s}
-tbody tr:hover{background:#f6f6f9}
-.badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.76rem;font-weight:600;white-space:nowrap}
-.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.st-critico{background:var(--red-bg);color:var(--red)}
-.st-serio{background:var(--orange-bg);color:var(--orange)}
-.st-atencao{background:var(--amber-bg);color:var(--amber)}
-.st-ok{background:var(--ok-bg);color:var(--ok-ink)}
-.st-off{background:#f0f0f3;color:var(--ink-2)}
+/* Briefing (slider) */
+.slider{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:12px}
+.slides-janela{flex:1 1 auto;min-height:0;position:relative;overflow:hidden;border-radius:var(--r-card)}
+.slides{display:flex;height:100%;transition:transform .55s var(--ease);will-change:transform}
+.slide{flex:0 0 100%;min-width:0;height:100%;display:flex}
+.card-slide{flex:1 1 auto;min-width:0;overflow:auto;gap:14px;padding:clamp(20px,3vh,36px) clamp(22px,3vw,44px);scrollbar-width:thin;scrollbar-color:rgba(254,250,224,.3) transparent}
+.card-slide:hover{transform:none;box-shadow:none}
+.card-slide h3{font:700 clamp(19px,2.8vh,24px)/1.2 var(--sans);color:var(--verde)}
+.slide-corpo{font-size:clamp(13.5px,1.8vh,15px);line-height:1.5;color:var(--marfim)}
+.slide-corpo.duas-colunas{columns:2;column-gap:40px}
+.slide-corpo li{position:relative;padding-left:18px;margin:0 0 10px;break-inside:avoid}
+.slide-corpo ul>li::before{content:"";position:absolute;left:0;top:.52em;width:8px;height:8px;border-radius:50%;background:var(--verde-suave)}
+.slide-corpo ol{counter-reset:item}
+.slide-corpo ol>li{counter-increment:item;padding-left:26px}
+.slide-corpo ol>li::before{content:counter(item) ".";position:absolute;left:0;top:0;font-weight:800;color:var(--verde)}
+.slide-corpo li ul,.slide-corpo li ol{margin-top:8px}
+.slide-corpo li li{margin-bottom:6px;font-size:.95em}
+.slide-corpo li li::before{width:6px;height:6px;background:rgba(173,203,103,.7)}
+.slide-corpo strong{color:#fff;font-weight:700}
+.slide-corpo em{color:var(--verde)}
+.slide-corpo code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace;font-size:.9em;background:rgba(40,54,24,.4);padding:1px 5px;border-radius:5px}
+.slide-corpo p{margin-bottom:10px}
+.slide-corpo h4,.slide-corpo h5{color:var(--verde);margin:6px 0 8px;font-size:1.05em}
+.slide-corpo hr{border:0;border-top:1px solid rgba(254,250,224,.18);margin:10px 0}
+.slider-controles{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:18px}
+.seta{background:none;border:0;color:var(--oliva);font:400 34px/1 var(--serif);cursor:pointer;padding:2px 12px;border-radius:12px;transition:transform .2s var(--ease),opacity .2s,background .2s}
+.seta:hover{transform:scale(1.15);background:rgba(40,54,24,.08)}
+.seta:disabled{opacity:.4;cursor:default;transform:none;background:none}
+.indicadores{display:flex;gap:12px}
+.indicadores button{width:clamp(28px,3vw,40px);height:5px;border-radius:999px;border:0;background:rgba(96,108,56,.45);cursor:pointer;padding:0;transition:background .3s,transform .3s}
+.indicadores button:hover{background:rgba(96,108,56,.7)}
+.indicadores button[aria-selected=true]{background:var(--oliva);transform:scaleY(1.3)}
 
-/* briefing */
-.briefing{line-height:1.65;padding:26px clamp(20px,3vw,34px)}
-.briefing h2{font-size:1.3rem;margin:0 0 14px;letter-spacing:-.02em}
-.briefing h3{font-size:1.05rem;margin:26px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);letter-spacing:-.01em}
-.briefing h4{font-size:.95rem;margin:16px 0 4px}
-.briefing ul,.briefing ol{padding-left:22px;margin:6px 0}
-.briefing li{margin:4px 0}
-.briefing li::marker{color:var(--ink-3)}
-.briefing code{background:#f0f0f3;padding:1px 6px;border-radius:6px;font-size:.86em}
-.briefing p{margin:8px 0}
-.briefing strong{font-weight:600}
-.briefing hr{border:0;border-top:1px solid var(--line);margin:18px 0}
+/* Fontes */
+.grade-fontes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);align-content:start}
+.card-fonte{gap:10px;min-height:clamp(180px,30vh,320px)}
+.fonte-cabeca{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.estado{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;white-space:nowrap}
+.estado::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.estado.ok{background:var(--verde);color:var(--oliva-escuro)}
+.estado.desatualizada{background:var(--ambar-bg);color:var(--ambar-ink)}
+.estado.indisponivel{background:var(--verm-bg);color:var(--verm-ink)}
+.fonte-hora{font-size:14px;color:var(--verde-texto);font-weight:600}
+.fonte-hora b{color:var(--marfim);font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
+.fonte-detalhe{font-size:13px;color:rgba(254,250,224,.6)}
+.mini-stats{display:flex;gap:22px;margin-top:auto;padding-top:12px;border-top:1px solid rgba(254,250,224,.14);flex-wrap:wrap}
+.mini-stats li{display:flex;flex-direction:column}
+.mini-stats b{font:800 clamp(22px,3vh,30px)/1 var(--sans);color:var(--marfim);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mini-stats span{font-size:12px;color:var(--verde-texto);font-weight:600;margin-top:4px}
 
-/* rodapé / fontes */
-footer{margin-top:40px;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-2);font-size:.88rem;scroll-margin-top:76px}
-footer .sec-head{margin-bottom:10px}
-.fontes{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr));gap:12px}
-.fontes li{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.75);border:1px solid var(--line);transition:transform .4s var(--ease),box-shadow .4s var(--ease)}
-.fontes li:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.fontes strong{display:block;color:var(--ink);font-weight:600}
-.fontes span.info{font-size:.82rem;color:var(--ink-2)}
-.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none;background:var(--ok);box-shadow:0 0 0 3px rgba(31,157,85,.16)}
-.dot.desatualizada{background:var(--red-line);animation:pulse 2.4s ease-in-out infinite}
-.dot.indisponivel{background:var(--ink-3);box-shadow:0 0 0 3px rgba(0,0,0,.06)}
-.note{font-size:.8rem;color:var(--ink-3);margin:12px 0 0}
-
-/* animações */
-@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.4)}70%{box-shadow:0 0 0 8px rgba(229,72,77,0)}}
-@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(50px,-36px) scale(1.08)}}
-.js .reveal{opacity:0;transform:translateY(18px);transition:opacity .75s var(--ease),transform .75s var(--ease);transition-delay:var(--d,0s)}
-.js .reveal.in{opacity:1;transform:none}
-@media(prefers-reduced-motion:reduce){
-  *{animation:none!important;transition:none!important}
-  html{scroll-behavior:auto}
-  .js .reveal{opacity:1;transform:none}
+/* entrada escalonada dos cards (só no modo palco) */
+@media (min-width:900px){
+  .secao.ativa .card{animation:entrar .6s var(--ease-out) backwards;animation-delay:calc(.14s + var(--i,0)*70ms)}
 }
-@media(max-width:520px){.card .value{font-size:2rem}}
+@media (min-width:900px) and (max-width:1199px){
+  .slide-corpo.duas-colunas{columns:1}
+  .grade-fontes{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* ---- telas estreitas: rolagem normal, seções empilhadas, menu simples ---- */
+@media (max-width:899px){
+  body{overflow:auto}
+  .palco{display:block;height:auto;padding:0 12px 16px}
+  .topo{position:sticky;top:0;z-index:20;height:auto;flex-wrap:wrap;background:var(--creme);padding:12px 4px;gap:10px 16px}
+  .abelha{height:52px}
+  .wordmark{font-size:22px}
+  .favo{height:auto;flex:1 0 100%;justify-content:flex-start}
+  .favo-svg{display:none !important}
+  .menu-simples{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;width:100%}
+  .menu-simples::-webkit-scrollbar{display:none}
+  .menu-simples a{flex:0 0 auto;background:var(--oliva);color:var(--marfim);text-decoration:none;font-size:13px;font-weight:700;padding:7px 14px;border-radius:999px;transition:background .2s,color .2s}
+  .menu-simples a.ativa{background:var(--mel);color:var(--oliva-escuro)}
+  .carimbo{margin:10px 4px 8px}
+  .colmeia{overflow:visible;border-radius:28px;padding:6px 0}
+  .secao{position:static;opacity:1;visibility:visible;transform:none;transition:none;overflow:visible;padding:22px 18px;scroll-margin-top:150px;gap:18px}
+  .secao+.secao{border-top:1px solid rgba(40,54,24,.15)}
+  .titulo-secao{font-size:clamp(36px,10vw,52px)}
+  .grade-destaques{grid-template-columns:1fr;grid-template-rows:none}
+  .card-largo{grid-column:auto}
+  .card-largo .card-topo{grid-template-columns:1fr}
+  .card-numero{font-size:clamp(44px,12vw,64px)}
+  .graficos{grid-template-columns:1fr}
+  .grafico-caixa{height:240px !important}
+  .secao-cabeca.dividida{grid-template-columns:1fr}
+  .secao-cabeca.dividida .titulo-secao{grid-column:1;grid-row:1}
+  .secao-cabeca.dividida .lado{grid-column:1;grid-row:2}
+  .card-ranking{min-height:320px}
+  .nomes span{max-width:110px}
+  .tabela-clara{max-height:70vh}
+  .slides-janela{height:min(70vh,560px)}
+  .slide-corpo.duas-colunas{columns:1}
+  .grade-fontes{grid-template-columns:1fr}
+  .card-fonte{min-height:0}
+}
+
+/* ---- movimento reduzido: fade rápido, sem deslocamentos ---- */
+@media (prefers-reduced-motion:reduce){
+  .secao{transition:opacity .15s linear;transform:none !important}
+  .secao.ativa{transition-delay:0s}
+  .secao.ativa .card{animation:none}
+  .card,.cel.nav,.pilula,.seta,.slides,.expansivel,.barra,.valor,.grafico-caixa,.indicadores button{transition:none !important}
+  .cel.nav:hover,.card:hover,.pilula:hover,.seta:hover{transform:none}
+}
+
 @media print{
-  body{background:#fff}.ambient,.bar{display:none}
-  .panel,.card,.fontes li{box-shadow:none;break-inside:avoid}
-  .js .reveal{opacity:1;transform:none}
-  details.dados{display:none}
+  body{overflow:visible;background:#fff}
+  .palco{display:block;height:auto}
+  .topo{height:auto}
+  .favo,.slider-controles,.acoes{display:none}
+  .colmeia{overflow:visible;background:none}
+  .secao{position:static;opacity:1;visibility:visible;transform:none;overflow:visible;break-inside:avoid;background:var(--mel);border-radius:24px;margin-bottom:12px}
+  .slides-janela{overflow:visible}
+  .expansivel{height:auto !important;opacity:1}
+  .slides{display:block;transform:none !important}
+  .slide{height:auto;margin-bottom:12px}
+  .card{break-inside:avoid}
 }
 """
 
-# Script de interface: revelação ao rolar, contagem dos números, navegação ativa.
+
+# --- JS: navegação por seções, menu, slider, tabela expansível ---------------
 JS_UI = """
 (function(){
-  var rm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var els = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
-  var mostrar = function(el){ el.classList.add("in"); };
-  if ("IntersectionObserver" in window && !rm) {
-    var io = new IntersectionObserver(function(es){
-      es.forEach(function(e){ if (e.isIntersecting) { mostrar(e.target); io.unobserve(e.target); } });
-    }, { threshold: .1, rootMargin: "0px 0px -5% 0px" });
-    els.forEach(function(el){ io.observe(el); });
-    setTimeout(function(){ els.forEach(mostrar); }, 3000);
-  } else { els.forEach(mostrar); }
+  "use strict";
+  var doc = document, win = window;
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var mqPalco = win.matchMedia ? win.matchMedia("(min-width: 900px)") : { matches: true };
+  var secoes = Array.prototype.slice.call(doc.querySelectorAll(".secao"));
+  var ids = secoes.map(function(s){ return s.id; });
+  var links = Array.prototype.slice.call(doc.querySelectorAll("[data-alvo]"));
+  var atual = 0, travado = false, ultimaInterna = 0;
+  var palco = function(){ return !!mqPalco.matches; };
+  var limitar = function(n){ return Math.max(0, Math.min(secoes.length - 1, n)); };
+  var emitir = function(nome, detalhe){
+    try { doc.dispatchEvent(new CustomEvent(nome, { detail: detalhe })); } catch (e) {}
+  };
 
-  var fmt = function(n){ return n.toLocaleString("pt-BR"); };
-  Array.prototype.forEach.call(document.querySelectorAll("[data-n]"), function(el){
-    var n = Number(el.getAttribute("data-n"));
-    if (!isFinite(n) || rm || !window.requestAnimationFrame) return;
-    var t0 = null, dur = 1100;
-    el.textContent = "0";
-    var tick = function(t){
-      if (t0 === null) t0 = t;
-      var p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
-      el.textContent = fmt(Math.round(n * e));
-      if (p < 1) requestAnimationFrame(tick); else el.textContent = fmt(n);
-    };
-    requestAnimationFrame(tick);
-    setTimeout(function(){ el.textContent = fmt(n); }, dur + 400);
+  function marcarMenu(id){
+    links.forEach(function(a){
+      var on = a.getAttribute("data-alvo") === id;
+      a.classList.toggle("ativa", on);
+      if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+  }
+  function aplicarModo(){
+    secoes.forEach(function(s, i){
+      if (palco()) {
+        var on = i === atual;
+        s.classList.toggle("ativa", on);
+        s.classList.toggle("antes", i < atual);
+        s.classList.toggle("depois", i > atual);
+        s.inert = !on;
+        if (on) s.removeAttribute("aria-hidden"); else s.setAttribute("aria-hidden", "true");
+      } else {
+        s.classList.add("ativa");
+        s.classList.remove("antes", "depois");
+        s.inert = false;
+        s.removeAttribute("aria-hidden");
+      }
+    });
+  }
+  function mostrar(n, opts){
+    opts = opts || {};
+    n = limitar(n);
+    if (n === atual && !opts.forcar) return;
+    atual = n;
+    aplicarModo();
+    marcarMenu(ids[n]);
+    if (palco() && secoes[n]) secoes[n].scrollTop = 0;
+    if (!opts.semHash && win.history && win.history.replaceState) {
+      try { win.history.replaceState(null, "", "#" + ids[n]); } catch (e) {}
+    }
+    emitir("secao:ativa", { id: ids[n], indice: n });
+    travado = true;
+    win.setTimeout(function(){ travado = false; }, rm ? 200 : 900);
+  }
+  // true se algum ancestral [data-scroll] ainda pode rolar na direção dy
+  function rolavelAncestral(el, dy){
+    while (el && el !== doc.body && el.nodeType === 1) {
+      if (el.hasAttribute("data-scroll")) {
+        if (dy > 0 ? el.scrollTop + el.clientHeight < el.scrollHeight - 1 : el.scrollTop > 0) return true;
+      }
+      el = el.parentNode;
+    }
+    return false;
+  }
+
+  // roda do mouse: uma seção por gesto (com debounce), sem mover fundo/header/container
+  win.addEventListener("wheel", function(e){
+    if (!palco() || e.ctrlKey) return;
+    var dy = e.deltaY;
+    if (e.deltaMode === 1) dy *= 16; else if (e.deltaMode === 2) dy *= 400;
+    if (Math.abs(dy) < Math.abs(e.deltaX)) return;
+    if (rolavelAncestral(e.target, dy)) { ultimaInterna = Date.now(); return; }
+    e.preventDefault();
+    if (travado || Date.now() - ultimaInterna < 550 || Math.abs(dy) < 6) return;
+    mostrar(atual + (dy > 0 ? 1 : -1));
+  }, { passive: false });
+
+  // teclado: setas/PageUp/PageDown/Home/End trocam a seção; Tab segue normal
+  win.addEventListener("keydown", function(e){
+    if (!palco() || e.altKey || e.ctrlKey || e.metaKey) return;
+    var t = e.target, tag = t && t.tagName ? t.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+    var k = e.key, espaco = k === " " || k === "Spacebar";
+    if (espaco && (tag === "button" || tag === "a" || tag === "summary")) return;
+    if (k === "ArrowDown" || k === "PageDown" || (espaco && !e.shiftKey)) {
+      if (rolavelAncestral(t, 1)) return;
+      e.preventDefault(); mostrar(atual + 1);
+    } else if (k === "ArrowUp" || k === "PageUp" || (espaco && e.shiftKey)) {
+      if (rolavelAncestral(t, -1)) return;
+      e.preventDefault(); mostrar(atual - 1);
+    } else if (k === "Home") { e.preventDefault(); mostrar(0); }
+    else if (k === "End") { e.preventDefault(); mostrar(secoes.length - 1); }
   });
 
-  var links = Array.prototype.slice.call(document.querySelectorAll("nav.seg a"));
-  var alvos = links.map(function(a){ return document.querySelector(a.getAttribute("href")); }).filter(Boolean);
-  if (alvos.length && "IntersectionObserver" in window) {
-    var spy = new IntersectionObserver(function(es){
-      es.forEach(function(e){
-        if (!e.isIntersecting) return;
-        links.forEach(function(a){ a.classList.toggle("active", a.getAttribute("href") === "#" + e.target.id); });
+  // toque vertical (telas touch em modo palco)
+  var toqueX = null, toqueY = null;
+  doc.addEventListener("touchstart", function(e){
+    if (e.touches.length === 1) { toqueX = e.touches[0].clientX; toqueY = e.touches[0].clientY; }
+  }, { passive: true });
+  doc.addEventListener("touchend", function(e){
+    if (!palco() || toqueY === null) return;
+    var t = e.changedTouches[0], dy = toqueY - t.clientY, dx = toqueX - t.clientX;
+    toqueX = toqueY = null;
+    if (Math.abs(dy) < 60 || Math.abs(dy) < Math.abs(dx) || rolavelAncestral(e.target, dy)) return;
+    mostrar(atual + (dy > 0 ? 1 : -1));
+  }, { passive: true });
+
+  links.forEach(function(a){
+    a.addEventListener("click", function(e){
+      var i = ids.indexOf(a.getAttribute("data-alvo"));
+      if (i < 0) return;
+      if (palco()) { e.preventDefault(); mostrar(i); }
+      else marcarMenu(ids[i]);
+    });
+  });
+  win.addEventListener("hashchange", function(){
+    var i = ids.indexOf((location.hash || "").slice(1));
+    if (i >= 0 && i !== atual) mostrar(i, { semHash: true });
+  });
+  if (mqPalco.addEventListener) mqPalco.addEventListener("change", aplicarModo);
+  else if (mqPalco.addListener) mqPalco.addListener(aplicarModo);
+
+  // contagem animada dos números-destaque (uma vez, quando a seção aparece)
+  var contou = false;
+  function contar(){
+    if (contou) return;
+    contou = true;
+    var fmt = function(n){ return n.toLocaleString("pt-BR"); };
+    Array.prototype.forEach.call(doc.querySelectorAll("[data-n]"), function(el){
+      var n = Number(el.getAttribute("data-n"));
+      if (!isFinite(n) || rm || !win.requestAnimationFrame || n === 0) return;
+      var t0 = null, dur = 900;
+      var tick = function(t){
+        if (t0 === null) t0 = t;
+        var p = Math.min(1, (t - t0) / dur), ease = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmt(Math.round(n * ease));
+        if (p < 1) win.requestAnimationFrame(tick); else el.textContent = fmt(n);
+      };
+      el.textContent = "0";
+      win.requestAnimationFrame(tick);
+    });
+  }
+  doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id === "destaques") contar(); });
+
+  // slider do briefing
+  (function(){
+    var slider = doc.querySelector(".slider");
+    if (!slider) return;
+    var faixa = slider.querySelector(".slides");
+    var slides = Array.prototype.slice.call(faixa.children);
+    var setas = slider.querySelectorAll(".seta");
+    var pontos = Array.prototype.slice.call(slider.querySelectorAll(".indicadores button"));
+    var i = 0, n = slides.length;
+    function ir(k, focar){
+      i = Math.max(0, Math.min(n - 1, k));
+      faixa.style.transform = "translateX(" + (-i * 100) + "%)";
+      slides.forEach(function(s, j){
+        var on = j === i;
+        s.classList.toggle("ativo", on);
+        s.inert = !on;
+        s.setAttribute("aria-hidden", on ? "false" : "true");
       });
-    }, { rootMargin: "-35% 0px -55% 0px" });
-    alvos.forEach(function(s){ spy.observe(s); });
+      pontos.forEach(function(p, j){
+        p.setAttribute("aria-selected", j === i ? "true" : "false");
+        p.tabIndex = j === i ? 0 : -1;
+      });
+      if (setas[0]) setas[0].disabled = i === 0;
+      if (setas[1]) setas[1].disabled = i === n - 1;
+      if (focar && pontos[i]) pontos[i].focus();
+    }
+    Array.prototype.forEach.call(setas, function(b){
+      b.addEventListener("click", function(){ ir(i + Number(b.getAttribute("data-dir") || 1)); });
+    });
+    pontos.forEach(function(p, j){ p.addEventListener("click", function(){ ir(j); }); });
+    slider.addEventListener("keydown", function(e){
+      if (e.key === "ArrowLeft") { e.preventDefault(); ir(i - 1, true); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); ir(i + 1, true); }
+    });
+    win.addEventListener("keydown", function(e){
+      if (!palco() || ids[atual] !== "briefing" || slider.contains(e.target)) return;
+      if (e.key === "ArrowLeft") ir(i - 1); else if (e.key === "ArrowRight") ir(i + 1);
+    });
+    var x0 = null, y0 = null;
+    slider.addEventListener("touchstart", function(e){ x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+    slider.addEventListener("touchend", function(e){
+      if (x0 === null) return;
+      var dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+      x0 = y0 = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) ir(i + (dx < 0 ? 1 : -1));
+    }, { passive: true });
+    ir(0);
+  })();
+
+  // "Ver dados da série": expande/recolhe a tabela com animação
+  (function(){
+    var btn = doc.querySelector(".pilula[aria-controls]");
+    if (!btn) return;
+    var alvo = doc.getElementById(btn.getAttribute("aria-controls"));
+    if (!alvo) return;
+    var secao = btn.closest(".secao"), texto = btn.querySelector(".pilula-texto");
+    var caixas = secao ? Array.prototype.slice.call(secao.querySelectorAll(".grafico-caixa")) : [];
+    alvo.inert = true;
+    // anima a altura das caixas de gráfico (de/para o tamanho natural), sem pulos
+    function animarCaixas(abrir){
+      var alvoPx = Math.round(Math.max(140, Math.min(230, win.innerHeight * 0.2)));
+      caixas.forEach(function(cx){
+        var atual = cx.getBoundingClientRect().height;
+        if (rm || !palco()) { cx.style.height = abrir ? alvoPx + "px" : ""; return; }
+        if (abrir) cx.dataset.alturaAntes = String(Math.round(atual));
+        var destino = abrir ? alvoPx : Number(cx.dataset.alturaAntes || 0);
+        cx.style.transition = "none"; cx.style.height = atual + "px"; void cx.offsetHeight; cx.style.transition = "";
+        cx.style.height = destino + "px";
+        if (!abrir) {
+          var limpar = function(){ cx.style.height = ""; cx.removeEventListener("transitionend", limpar); };
+          cx.addEventListener("transitionend", limpar);
+          win.setTimeout(limpar, 700);
+        }
+      });
+    }
+    var fimAuto = function(){ if (alvo.classList.contains("aberto")) alvo.style.height = "auto"; };
+    alvo.addEventListener("transitionend", function(e){ if (e.propertyName === "height") fimAuto(); });
+    function animarAlvo(abrir){
+      if (rm) { alvo.style.height = abrir ? "auto" : "0px"; return; }
+      if (abrir) {
+        alvo.style.height = "0px"; void alvo.offsetHeight;
+        alvo.style.height = alvo.scrollHeight + "px";
+        win.setTimeout(fimAuto, 700);
+      } else {
+        alvo.style.height = alvo.getBoundingClientRect().height + "px"; void alvo.offsetHeight;
+        alvo.style.height = "0px";
+      }
+    }
+    btn.addEventListener("click", function(){
+      var abrir = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", abrir ? "true" : "false");
+      alvo.classList.toggle("aberto", abrir);
+      alvo.inert = !abrir;
+      animarAlvo(abrir);
+      animarCaixas(abrir);
+      if (secao) secao.classList.toggle("aberto", abrir);
+      if (texto) texto.textContent = abrir ? "Ocultar dados da série" : "Ver dados da série";
+      if (abrir) win.setTimeout(function(){
+        try { alvo.scrollIntoView({ behavior: rm ? "auto" : "smooth", block: "nearest" }); } catch (e) {}
+      }, rm ? 0 : 380);
+    });
+  })();
+
+  // estado inicial (hash ou primeira seção); a classe .ativa entra após o primeiro
+  // quadro para a transição de entrada acontecer
+  var h = ids.indexOf((location.hash || "").slice(1));
+  atual = h >= 0 ? h : 0;
+  secoes.forEach(function(s, i){ s.classList.toggle("antes", i < atual); s.classList.toggle("depois", i > atual); });
+  var ligar = function(){
+    aplicarModo();
+    marcarMenu(ids[atual]);
+    emitir("secao:ativa", { id: ids[atual], indice: atual });
+    if (!palco()) contar();
+  };
+  if (win.requestAnimationFrame && !rm) win.requestAnimationFrame(function(){ win.requestAnimationFrame(ligar); });
+  else ligar();
+})();
+"""
+
+# Gráficos (Chart.js embutido). __DATA__ é substituído pelo JSON inline. Os
+# gráficos são criados quando a seção Evolução aparece (para animar à vista).
+JS_CHARTS = """
+(function(){
+  "use strict";
+  var D = __DATA__;
+  if (typeof Chart === "undefined") return;
+  var doc = document, win = window;
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var palco = function(){ return !win.matchMedia || win.matchMedia("(min-width: 900px)").matches; };
+  var cs = getComputedStyle(doc.documentElement);
+  var v = function(n, padrao){ return cs.getPropertyValue(n).trim() || padrao; };
+  var azul = v("--azul", "#277fae"), rubro = v("--rubro", "#e0301e"), rubroArea = v("--rubro-area", "#a33e20"), marfim = v("--marfim", "#fefae0");
+  var rgba = function(c, a){
+    var r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  };
+  Chart.defaults.font.family = getComputedStyle(doc.body).fontFamily;
+  Chart.defaults.font.size = 12;
+  Chart.defaults.font.weight = "600";
+  Chart.defaults.color = "rgba(254,250,224,.62)";
+  var anim = rm ? false : { duration: 900, easing: "easeOutQuart" };
+  var tooltip = { backgroundColor: "#283618", titleColor: "#b8d86e", bodyColor: "#fefae0", padding: 12, cornerRadius: 12,
+    displayColors: false, titleFont: { weight: "700" }, bodyFont: { size: 12 }, caretSize: 6 };
+  var escalas = {
+    x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8, padding: 8 } },
+    y: { beginAtZero: true, grid: { color: "rgba(254,250,224,.16)", tickLength: 0 }, border: { display: false, dash: [3, 4] },
+         ticks: { precision: 0, padding: 10, maxTicksLimit: 7 } }
+  };
+  function area(el, rotulo, dados, cor, corArea, a0, a1){
+    var muitos = D.labels.length > 40;
+    new Chart(el, { type: "line",
+      data: { labels: D.labels, datasets: [{ label: rotulo, data: dados, borderColor: cor, fill: "origin", borderWidth: 2.5,
+        backgroundColor: function(ctx){
+          var ca = ctx.chart.chartArea;
+          if (!ca) return rgba(corArea, a0);
+          var g = ctx.chart.ctx.createLinearGradient(0, ca.top, 0, ca.bottom);
+          g.addColorStop(0, rgba(corArea, a0)); g.addColorStop(1, rgba(corArea, a1));
+          return g;
+        },
+        pointRadius: muitos ? 0 : 3.5, pointHoverRadius: 7, pointBackgroundColor: cor, pointBorderColor: marfim, pointBorderWidth: 2,
+        tension: .25, spanGaps: false }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: anim, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { display: false }, tooltip: tooltip }, scales: escalas, layout: { padding: { top: 8, right: 10 } } } });
+  }
+  var feito = false;
+  function montar(){
+    if (feito) return;
+    var fila = doc.getElementById("chartFila"), atend = doc.getElementById("chartAtend");
+    if (!fila && !atend) return;
+    feito = true;
+    if (fila) area(fila, "Fila de chamados", D.fila, azul, azul, .95, .06);
+    if (atend) area(atend, "Atendimentos fechados", D.atend, rubro, rubroArea, .85, .05);
+  }
+  doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id === "evolucao") montar(); });
+  if (win.matchMedia) {  // janela redimensionada para o modo empilhado antes de visitar Evolução
+    var mq = win.matchMedia("(min-width: 900px)");
+    var aoMudar = function(){ if (!mq.matches) montar(); };
+    if (mq.addEventListener) mq.addEventListener("change", aoMudar); else if (mq.addListener) mq.addListener(aoMudar);
+  }
+  if (!palco()) {
+    var alvo = doc.getElementById("chartFila") || doc.getElementById("chartAtend");
+    if (alvo && "IntersectionObserver" in win && !rm) {
+      var io = new IntersectionObserver(function(es){ es.forEach(function(x){ if (x.isIntersecting) { montar(); io.disconnect(); } }); }, { threshold: .1 });
+      io.observe(alvo);
+      win.setTimeout(montar, 4000);
+    } else montar();
   }
 })();
 """
 
-# Script dos gráficos: __DATA__ é substituído pelo JSON inline. Cada gráfico é
-# criado quando o painel entra na tela, para a animação acontecer à vista.
-JS_CHARTS = """
-(function(){
-  var D = __DATA__;
-  if (typeof Chart === "undefined") return;
-  var rm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var cs = getComputedStyle(document.documentElement);
-  var v = function(n){ return cs.getPropertyValue(n).trim(); };
-  var ink2 = v("--ink-2"), ink3 = v("--ink-3"), grid = v("--grid"), s1 = v("--serie-1"), s2 = v("--serie-2");
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  Chart.defaults.font.size = 12;
-  Chart.defaults.color = ink3;
-  var anim = rm ? false : { duration: 900, easing: "easeOutQuart" };
-  var tooltip = { backgroundColor: "rgba(29,29,31,.92)", padding: 12, cornerRadius: 12, displayColors: false,
-    titleFont: { weight: "600" }, bodyFont: { size: 12 }, caretSize: 6 };
-  var base = {
-    responsive: true, maintainAspectRatio: false, animation: anim,
-    interaction: { mode: "index", intersect: false },
-    plugins: { legend: { display: false }, tooltip: tooltip },
-    scales: {
-      x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
-      y: { beginAtZero: true, grid: { color: grid }, border: { display: false, dash: [4, 4] }, ticks: { precision: 0, padding: 6 } }
-    }
-  };
-  var hex = function(c, a){
-    var r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
-    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
-  };
-  var linha = function(el, label, dados, cor){
-    var ctx = el.getContext("2d");
-    var grad = ctx.createLinearGradient(0, 0, 0, el.parentNode.clientHeight || 260);
-    grad.addColorStop(0, hex(cor, .22)); grad.addColorStop(1, hex(cor, 0));
-    new Chart(el, { type: "line",
-      data: { labels: D.labels, datasets: [{ label: label, data: dados, borderColor: cor, backgroundColor: grad, fill: true,
-        borderWidth: 2, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: cor, pointBorderColor: "#fff", pointBorderWidth: 2,
-        tension: .35, spanGaps: false }] },
-      options: base });
-  };
-  var barras = function(el){
-    if (!D.rank.labels.length) return;
-    var rotulos = { id: "rotulos", afterDatasetsDraw: function(c){
-      var ctx = c.ctx, meta = c.getDatasetMeta(0);
-      ctx.save(); ctx.fillStyle = ink2; ctx.font = "600 12px " + Chart.defaults.font.family;
-      meta.data.forEach(function(b, i){
-        var val = D.rank.valores[i]; if (val == null) return;
-        if (D.rankHorizontal) { ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(val, b.x + 8, b.y); }
-        else { ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(val, b.x, b.y - 6); }
-      });
-      ctx.restore();
-    } };
-    new Chart(el, { type: "bar",
-      data: { labels: D.rank.labels, datasets: [{ label: D.rank.titulo, data: D.rank.valores, backgroundColor: s1,
-        hoverBackgroundColor: hex(s1, .85), borderRadius: 6, borderSkipped: "start", maxBarThickness: 22, categoryPercentage: .7 }] },
-      options: Object.assign({}, base, {
-        indexAxis: D.rankHorizontal ? "y" : "x",
-        layout: { padding: { right: D.rankHorizontal ? 40 : 0, top: D.rankHorizontal ? 0 : 20 } },
-        interaction: { mode: "nearest", intersect: true },
-        scales: D.rankHorizontal
-          ? { x: { beginAtZero: true, grid: { color: grid }, border: { display: false }, ticks: { precision: 0 } },
-              y: { grid: { display: false }, border: { display: false }, ticks: { color: ink2 } } }
-          : base.scales
-      }),
-      plugins: [rotulos] });
-  };
-  var fabricas = {
-    chartFila: function(el){ linha(el, "Fila de chamados", D.fila, s1); },
-    chartAtend: function(el){ linha(el, "Atendimentos fechados", D.atend, s2); },
-    chartRank: barras
-  };
-  var pendentes = Object.keys(fabricas).map(function(id){ return document.getElementById(id); }).filter(Boolean);
-  var montar = function(el){ if (el.dataset.feito) return; el.dataset.feito = "1"; fabricas[el.id](el); };
-  if ("IntersectionObserver" in window && !rm) {
-    var io = new IntersectionObserver(function(es){
-      es.forEach(function(e){ if (e.isIntersecting) { montar(e.target); io.unobserve(e.target); } });
-    }, { threshold: .15 });
-    pendentes.forEach(function(el){ io.observe(el); });
-    setTimeout(function(){ pendentes.forEach(montar); }, 3000);
-  } else { pendentes.forEach(montar); }
-})();
-"""
 
-
+# --- Helpers de renderização ---------------------------------------------------
 def num_html(valor) -> str:
     """Número formatado; quando inteiro, ganha data-n para a contagem animada."""
     if valor is None:
@@ -680,52 +1168,90 @@ def num_html(valor) -> str:
     return f'<span data-n="{n}">{fmt_num(n)}</span>'
 
 
-def render_card(rotulo, valor, sub="", delta="", tom="", indice=0) -> str:
-    return (
-        f'<div class="card reveal {tom}" style="--d:{indice * 0.08:.2f}s"><div class="label">{esc(rotulo)}</div>'
-        f'<div class="value">{valor}</div>'
-        f'<div class="sub">{sub}</div>'
-        + (delta or "")
-        + "</div>"
-    )
-
-
-def delta_pill(atual, anterior, rotulo="vs. dia anterior", melhor="menor") -> str:
-    """Variação em relação ao dia anterior. `melhor` diz qual direção é boa."""
+def badge_delta(atual, anterior, rotulo="vs. dia anterior", melhor="menor") -> str:
+    """Comparação com o dia anterior (metricas.jsonl). `melhor` diz qual direção é boa."""
     try:
         d = int(atual) - int(anterior)
     except (TypeError, ValueError):
         return ""
     if d == 0:
-        return f'<span class="pill">sem variação {esc(rotulo)}</span>'
+        return f'<span class="badge neutro"><span aria-hidden="true">=</span><b>0</b> {esc(rotulo)}</span>'
     subiu = d > 0
     bom = (subiu and melhor == "maior") or (not subiu and melhor == "menor")
     seta = "↑" if subiu else "↓"
-    return f'<span class="pill {"good" if bom else "bad"}">{seta} {abs(d)} {esc(rotulo)}</span>'
+    return f'<span class="badge {"bom" if bom else ""}"><span aria-hidden="true">{seta}</span><b>{abs(d)}</b> {esc(rotulo)}</span>'
 
 
-def render_tabela_simples(cabecalhos: list[str], linhas: list[list], num_cols: set[int] = frozenset()) -> str:
-    th = "".join(f'<th class="{"num" if i in num_cols else ""}">{esc(c)}</th>' for i, c in enumerate(cabecalhos))
-    tr = "".join(
-        "<tr>" + "".join(
-            f'<td class="{"num" if i in num_cols else ""}">{fmt_num(v) if i in num_cols else esc(v)}</td>'
-            for i, v in enumerate(l)
-        ) + "</tr>"
-        for l in linhas
+def badge_fonte(estado: dict) -> str:
+    """Aviso discreto no card quando a fonte está desatualizada ou indisponível."""
+    if estado["estado"] == "desatualizada":
+        return f'<span class="badge aviso">fonte desatualizada · coleta {esc(estado["detalhe"])}</span>'
+    if estado["estado"] == "indisponivel":
+        return '<span class="badge grave">fonte indisponível</span>'
+    return ""
+
+
+def eixo_bonito(maximo: int) -> tuple[int, int]:
+    """(topo do eixo, passo) com no máximo 8 divisões e folga à direita (38 -> 40)."""
+    if maximo <= 0:
+        return 5, 1
+    bruto = maximo / 8
+    mag = 10 ** math.floor(math.log10(bruto)) if bruto >= 1 else 1
+    passo = 1
+    for m in (1, 2, 5, 10):
+        passo = int(m * mag)
+        if maximo / passo <= 8:
+            break
+    topo = int(math.ceil(maximo / passo) * passo)
+    if topo <= maximo:
+        topo += passo
+    return topo, passo
+
+
+def titulo_secao(texto: str, id_: str, linhas: list[str] | None = None) -> str:
+    if linhas:
+        interno = "".join(f'<span class="l">{esc(l)}</span>' for l in linhas)
+    else:
+        interno = esc(texto)
+    return f'<h2 class="titulo-secao" id="t-{id_}">{interno}</h2>'
+
+
+def secao_vazia(id_: str, titulo: str, mensagem: str, centro: bool = True) -> str:
+    cab = f'<header class="secao-cabeca{" centro" if centro else ""}">{titulo_secao(titulo, id_)}</header>'
+    return (f'<section class="secao" id="{id_}" data-scroll aria-labelledby="t-{id_}">{cab}'
+            f'<p class="vazio">{mensagem}</p></section>')
+
+
+def render_ranking(nomes: list, valores: list) -> str:
+    vals = []
+    for v in valores:
+        try:
+            vals.append(max(0, int(v)))
+        except (TypeError, ValueError):
+            vals.append(0)
+    topo, passo = eixo_bonito(max(vals) if vals else 0)
+    divs = max(1, topo // passo)
+    nomes_html = "".join(f'<span title="{esc(n)}">{esc(n)}</span>' for n in nomes)
+    linhas = "".join(
+        f'<div class="linha" style="--v:{v};--i:{i}" title="{esc(n)}: {fmt_num(v)}">'
+        f'<span class="barra"></span><span class="valor">{fmt_num(v)}</span></div>'
+        for i, (n, v) in enumerate(zip(nomes, vals))
     )
-    return f'<div class="table-wrap"><table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table></div>'
+    ticks = "".join(f'<span style="--p:{k * passo / topo:.4f}">{fmt_num(k * passo)}</span>' for k in range(divs + 1))
+    return (f'<div class="ranking" style="--max:{topo};--divs:{divs};--n:{len(vals)}" role="img" '
+            f'aria-label="Barras: {esc(", ".join(f"{n} {v}" for n, v in zip(nomes, vals)))}">'
+            f'<div class="nomes">{nomes_html}</div>'
+            f'<div class="trilhos"><div class="grade-ranking" aria-hidden="true"></div>{linhas}</div>'
+            f'<div class="eixo" aria-hidden="true">{ticks}</div></div>')
 
 
-def sec_head(titulo: str, kicker: str = "") -> str:
-    k = f'<span class="kicker">{kicker}</span>' if kicker else ""
-    return f'<div class="sec-head reveal"><h2>{esc(titulo)}</h2>{k}</div>'
-
-
+# --- Montagem da página ------------------------------------------------------
 def gerar_html() -> str:
     agora = datetime.now()
     historico = ler_historico()
     relatorio = ler_relatorio()
     chart_js = carregar_chart_js()
+    fontes_css = carregar_fontes_css()
 
     fontes: dict[str, dict] = {}
     dados: dict[str, dict | None] = {}
@@ -739,7 +1265,7 @@ def gerar_html() -> str:
     if not isinstance(atend, dict):
         atend = {}
 
-    # --- registros anterior/atual do histórico (para deltas)
+    # --- registro anterior do histórico (para os badges de comparação)
     hoje_iso = date.today().isoformat()
     anterior: dict = {}
     if historico:
@@ -755,271 +1281,324 @@ def gerar_html() -> str:
     fontes_desatualizadas = [f["rotulo"] for f in fontes.values() if f["estado"] == "desatualizada"]
     fontes_indisponiveis = [f["rotulo"] for f in fontes.values() if f["estado"] == "indisponivel"]
 
-    # --- nomes de técnicos (para redigir quando ranking desligado)
     nomes_tecnicos = coletar_nomes_tecnicos(historico, helpdesk)
 
-    # ------------------------------------------------------------------ cards
-    def tom_fonte(chave, base=""):
-        est = fontes[chave]["estado"]
-        if est == "desatualizada":
-            return "red"
-        if est == "indisponivel":
-            return "muted"
-        return base
-
+    # ================================================================ 1. DESTAQUES
     if helpdesk:
-        card_atend = render_card(
-            "Atendimentos fechados (ontem)",
-            num_html(atend.get("total_atendimentos_fechados")),
-            f"dia de referência: {esc(atend.get('dia') or '—')}",
-            delta_pill(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior"),
-            tom_fonte("helpdesk"), 0,
-        )
-        card_fila = render_card(
-            "Fila de chamados",
-            num_html(helpdesk.get("fila_total_abertos")),
-            "chamados abertos no help desk",
-            delta_pill(helpdesk.get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor"),
-            tom_fonte("helpdesk"), 1,
-        )
         meus = helpdesk.get("meus_abertos")
         por_agente = helpdesk.get("por_agente") if isinstance(helpdesk.get("por_agente"), dict) else {}
         equipe = len(por_agente) > 1
-        sub_meus = f"novos hoje: {fmt_num(helpdesk.get('meus_novos_hoje'))}"
         if equipe and MOSTRAR_RANKING:
-            quebra = " · ".join(f"{esc(n)} {fmt_num((v or {}).get('abertos'))}" for n, v in por_agente.items())
-            sub_meus += f"<br>{quebra}"
+            quebra = '<span class="sep" aria-hidden="true">•</span>'.join(
+                f"<span>{esc(n)} <b>{fmt_num((v or {}).get('abertos'))}</b></span>" for n, v in por_agente.items())
+            quebra_html = f'<p class="quebra" aria-label="Abertos por técnico">{quebra}</p>'
         elif equipe:
-            sub_meus += f" · {len(por_agente)} agentes monitorados"
-        card_meus = render_card(
-            "Chamados abertos da equipe" if equipe else "Meus chamados abertos",
-            num_html(meus),
-            sub_meus,
-            delta_pill(meus, anterior.get("meus_abertos"), melhor="menor"),
-            tom_fonte("helpdesk", "ok" if meus == 0 else ""), 2,
-        )
+            quebra_html = f'<p class="quebra"><span>{len(por_agente)} agentes monitorados</span></p>'
+        else:
+            quebra_html = ""
+        card_largo = f"""
+<article class="card card-largo" style="--i:0" aria-labelledby="c-abertos">
+  <div class="card-topo">
+    <div class="card-medida">
+      <h3 class="card-titulo" id="c-abertos">{"Chamados<br>abertos - Suporte" if equipe else "Meus chamados<br>abertos"}</h3>
+      <p class="card-numero">{num_html(meus)}</p>
+    </div>
+    <div class="card-medida secundaria">
+      <h3 class="card-titulo">Abertos<br>Hoje:</h3>
+      <p class="card-numero menor">{num_html(helpdesk.get("meus_novos_hoje"))}</p>
+    </div>
+  </div>
+  <div class="badges">{badge_delta(meus, anterior.get("meus_abertos"), melhor="menor")}{badge_fonte(fontes["helpdesk"])}</div>
+  {quebra_html}
+</article>"""
+        card_atend = f"""
+<article class="card" style="--i:1" aria-labelledby="c-atend">
+  <div class="card-medida">
+    <h3 class="card-titulo" id="c-atend">Atendimentos<br>Fechados <small>(Ontem)</small></h3>
+    <p class="card-numero">{num_html(atend.get("total_atendimentos_fechados"))}</p>
+  </div>
+  <div class="badges">{badge_delta(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior")}{badge_fonte(fontes["helpdesk"])}</div>
+  <p class="card-rodape">Dia de Referência: {esc(atend.get("dia") or "—")}</p>
+</article>"""
+        card_fila = f"""
+<article class="card" style="--i:2" aria-labelledby="c-fila">
+  <div class="card-medida">
+    <h3 class="card-titulo" id="c-fila">Fila de<br>Chamados</h3>
+    <p class="card-numero">{num_html(helpdesk.get("fila_total_abertos"))}</p>
+  </div>
+  <p class="card-sub">Chamados abertos no help desk</p>
+  <div class="badges">{badge_delta(helpdesk.get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor")}{badge_fonte(fontes["helpdesk"])}</div>
+</article>"""
     else:
-        card_atend = render_card("Atendimentos fechados (ontem)", "—", "fonte indisponível", "", "muted", 0)
-        card_fila = render_card("Fila de chamados", "—", "fonte indisponível", "", "muted", 1)
-        card_meus = render_card("Chamados abertos (meus/equipe)", "—", "fonte indisponível", "", "muted", 2)
+        indisponivel = badge_fonte(fontes["helpdesk"])
+        card_largo = f"""
+<article class="card card-largo" style="--i:0" aria-labelledby="c-abertos">
+  <div class="card-medida"><h3 class="card-titulo" id="c-abertos">Chamados<br>abertos - Suporte</h3><p class="card-numero">—</p></div>
+  <p class="card-sub">Sem dados do help desk nesta geração.</p><div class="badges">{indisponivel}</div>
+</article>"""
+        card_atend = f"""
+<article class="card" style="--i:1" aria-labelledby="c-atend">
+  <div class="card-medida"><h3 class="card-titulo" id="c-atend">Atendimentos<br>Fechados <small>(Ontem)</small></h3><p class="card-numero">—</p></div>
+  <div class="badges">{indisponivel}</div><p class="card-rodape">Dia de Referência: —</p>
+</article>"""
+        card_fila = f"""
+<article class="card" style="--i:2" aria-labelledby="c-fila">
+  <div class="card-medida"><h3 class="card-titulo" id="c-fila">Fila de<br>Chamados</h3><p class="card-numero">—</p></div>
+  <p class="card-sub">Chamados abertos no help desk</p><div class="badges">{indisponivel}</div>
+</article>"""
 
     if licencas:
-        tom_lic = "red" if n_vencidas > 0 else ("amber" if n_vencendo > 0 else "ok")
-        if fontes["licencas"]["estado"] == "desatualizada":
-            tom_lic = "red"
-        card_lic = render_card(
-            "Licenças em risco",
-            f'{num_html(n_vencendo)}<span class="unit">vencendo</span>',
-            f"<strong>{fmt_num(n_vencidas)}</strong> vencidas recentemente"
-            + (f" · {fmt_num(vencidas_antigas)} antigas" if vencidas_antigas not in (None, "") else ""),
-            delta_pill(n_vencidas, anterior.get("lic_vencidas_recentes"), "vencidas vs. dia anterior", melhor="menor"),
-            tom_lic, 3,
-        )
+        badge_venc = (f'<span class="badge"><b>{fmt_num(n_vencidas)}</b> Vencidas Recentemente</span>' if n_vencidas
+                      else '<span class="badge bom">Nenhuma vencida recente</span>')
+        rodape_lic = (f'<p class="card-rodape">{fmt_num(vencidas_antigas)} vencida(s) há mais tempo (fora da janela)</p>'
+                      if vencidas_antigas not in (None, "") else "")
+        card_lic = f"""
+<article class="card" style="--i:3" aria-labelledby="c-lic">
+  <div class="card-medida">
+    <h3 class="card-titulo" id="c-lic">Licenças<br>em Risco</h3>
+    <div class="card-numero-bloco"><p class="card-numero">{num_html(n_vencendo)}</p><p class="card-sub">Vencendo</p></div>
+  </div>
+  <div class="badges">{badge_venc}{badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), "vencidas vs. dia anterior", melhor="menor")}{badge_fonte(fontes["licencas"])}</div>
+  {rodape_lic}
+</article>"""
     else:
-        card_lic = render_card("Licenças em risco", "—", "fonte indisponível", "", "muted", 3)
+        card_lic = f"""
+<article class="card" style="--i:3" aria-labelledby="c-lic">
+  <div class="card-medida"><h3 class="card-titulo" id="c-lic">Licenças<br>em Risco</h3><div class="card-numero-bloco"><p class="card-numero">—</p><p class="card-sub">Vencendo</p></div></div>
+  <div class="badges">{badge_fonte(fontes["licencas"])}</div>
+</article>"""
 
-    cards_html = card_atend + card_fila + card_meus + card_lic
+    secao_destaques = f"""
+<section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
+  <div class="grade-destaques">
+    {titulo_secao("Destaques do dia", "destaques", ["Destaques", "Do Dia"])}
+    {card_largo}{card_atend}{card_fila}{card_lic}
+  </div>
+</section>"""
 
-    # ------------------------------------------------------------------ banner
-    banner = ""
-    if fontes_desatualizadas or fontes_indisponiveis or n_vencidas > 0:
-        partes = []
-        if fontes_desatualizadas:
-            partes.append("Fonte desatualizada (coleta há mais de 24 h): " + ", ".join(esc(x) for x in fontes_desatualizadas))
-        if fontes_indisponiveis:
-            partes.append("Fonte indisponível: " + ", ".join(esc(x) for x in fontes_indisponiveis))
-        if n_vencidas > 0:
-            partes.append(f"{n_vencidas} licença(s) vencida(s) recentemente")
-        tom = "red" if (fontes_desatualizadas or n_vencidas > 0) else "muted"
-        banner = f'<div class="banner {tom}" role="status"><span class="ico">!</span><div>' + "<br>".join(partes) + "</div></div>"
-    elif n_vencendo > 0:
-        banner = (f'<div class="banner amber" role="status"><span class="ico">●</span>'
-                  f'<div>{n_vencendo} licença(s) vencendo em breve; nenhuma vencida recente.</div></div>')
-
-    # ------------------------------------------------------------------ séries
+    # ================================================================ 2. EVOLUÇÃO
     serie = serie_historico(historico, DIAS_GRAFICO)
     rank = ranking_semanal(historico)
-    tem_historico = bool(serie["labels"])
-
-    aviso_graficos = ""
-    if chart_js is None:
-        aviso_graficos = '<p class="note reveal">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). Os dados seguem nas tabelas abaixo.</p>'
-
-    # (c) linhas: dois painéis (um por medida), eixos independentes
-    if tem_historico:
-        tabela_hist = render_tabela_simples(
-            ["Data", "Fila de chamados", "Atendimentos fechados"],
-            [[label_dia(d), f, a] for d, f, a in zip(serie["datas"], serie["fila"], serie["atend"])][::-1],
-            {1, 2},
+    n_dias = len(serie["labels"])
+    if not n_dias:
+        secao_evolucao = secao_vazia("evolucao", "Evolução", "Histórico indisponível (historico/metricas.jsonl vazio ou ausente).")
+    else:
+        if chart_js is None:
+            graficos = ('<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
+                        'Os dados seguem na tabela abaixo.</p>')
+        else:
+            graficos = f"""
+<div class="graficos">
+  <article class="card card-grafico" style="--i:0">
+    <h3 class="card-titulo-md">Fila de Chamados Abertos</h3>
+    <p class="card-legenda">Últimos {n_dias} dia(s) registrado(s)</p>
+    <div class="grafico-caixa"><canvas id="chartFila" role="img" aria-label="Evolução da fila de chamados abertos"></canvas></div>
+  </article>
+  <article class="card card-grafico" style="--i:1">
+    <h3 class="card-titulo-md">Atendimentos fechados por dia</h3>
+    <p class="card-legenda">Referente ao último dia útil de cada registro</p>
+    <div class="grafico-caixa"><canvas id="chartAtend" role="img" aria-label="Evolução de atendimentos fechados por dia"></canvas></div>
+  </article>
+</div>"""
+        linhas_serie = "".join(
+            f'<tr><td>{esc(label_dia(d))}</td><td class="c">{fmt_num(f)}</td><td class="d">{fmt_num(a)}</td></tr>'
+            for d, f, a in list(zip(serie["datas"], serie["fila"], serie["atend"]))[::-1]
         )
-        n_dias = len(serie["labels"])
-        secao_linhas = f"""
-<div class="charts two">
-  <div class="panel reveal"><h3>Fila de chamados abertos</h3><p class="hint">últimos {n_dias} dia(s) registrado(s)</p>
-    <div class="chart-box"><canvas id="chartFila" role="img" aria-label="Evolução da fila de chamados"></canvas></div></div>
-  <div class="panel reveal" style="--d:.1s"><h3>Atendimentos fechados por dia</h3><p class="hint">referente ao último dia útil de cada registro</p>
-    <div class="chart-box"><canvas id="chartAtend" role="img" aria-label="Evolução de atendimentos fechados"></canvas></div></div>
-</div>
-<details class="dados reveal"><summary>Ver dados da série</summary>{tabela_hist}</details>"""
-    else:
-        secao_linhas = '<div class="panel reveal"><p class="empty">Histórico indisponível (historico/metricas.jsonl vazio ou ausente).</p></div>'
+        secao_evolucao = f"""
+<section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
+  <header class="secao-cabeca centro">{titulo_secao("Evolução", "evolucao")}<p class="subtitulo">últimos {DIAS_GRAFICO} dias</p></header>
+  {graficos}
+  <div class="serie">
+  <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="serie-dados"><span class="pilula-texto">Ver dados da série</span>{CHEVRON_SVG}</button></div>
+  <div class="expansivel" id="serie-dados"><div><div class="expansivel-pad">
+    <table class="tabela-serie"><caption class="sr-only">Dados da série: fila de chamados e atendimentos fechados por dia</caption>
+      <thead><tr><th scope="col">Data</th><th scope="col" class="c">Fila de chamados</th><th scope="col" class="d">Atendimentos fechados</th></tr></thead>
+      <tbody>{linhas_serie}</tbody></table>
+  </div></div></div>
+  </div>
+</section>"""
 
-    # (d) barras: ranking por técnico OU total da equipe por dia
+    # ================================================================ 3. EFICÁCIA
     if MOSTRAR_RANKING and rank["tecnicos"]:
-        altura = max(200, 40 + 34 * len(rank["tecnicos"]))
-        tabela_rank = render_tabela_simples(
-            ["Técnico", "Atendimentos"], [[n, v] for n, v in zip(rank["tecnicos"], rank["valores"])], {1})
-        secao_barras = f"""
-<div class="panel reveal"><h3>Ranking semanal por técnico</h3>
-  <p class="hint">soma dos últimos {len(rank['dias'])} dia(s) útil(eis) registrado(s): {esc(', '.join(rank['dias']))} · total {fmt_num(rank['total_periodo'])}</p>
-  <div class="chart-box tall" style="height:{altura}px"><canvas id="chartRank" role="img" aria-label="Ranking semanal por técnico"></canvas></div>
-  <details class="dados"><summary>Ver dados do ranking</summary>{tabela_rank}</details>
-</div>"""
+        titulo_rank, nomes_rank, valores_rank = "Ranking Semanal por Técnico", rank["tecnicos"], rank["valores"]
     elif rank["dias"]:
-        tabela_rank = render_tabela_simples(
-            ["Dia", "Atendimentos (equipe)"], [[d, t] for d, t in zip(rank["dias"], rank["totais"])], {1})
-        secao_barras = f"""
-<div class="panel reveal"><h3>Atendimentos da equipe por dia</h3>
-  <p class="hint">últimos {len(rank['dias'])} dia(s) útil(eis) registrado(s) · ranking por técnico desativado (DASHBOARD_MOSTRAR_RANKING=false)</p>
-  <div class="chart-box"><canvas id="chartRank" role="img" aria-label="Atendimentos da equipe por dia"></canvas></div>
-  <details class="dados"><summary>Ver dados</summary>{tabela_rank}</details>
-</div>"""
+        titulo_rank, nomes_rank, valores_rank = "Atendimentos da equipe por dia", rank["dias"], rank["totais"]
     else:
-        secao_barras = '<div class="panel reveal"><p class="empty">Sem registros de atendimentos no histórico.</p></div>'
+        titulo_rank, nomes_rank, valores_rank = "", [], []
+    if not nomes_rank:
+        secao_eficacia = secao_vazia("eficacia", "Eficácia", "Sem registros de atendimentos no histórico.")
+    else:
+        dias_txt = ", ".join(rank["dias"])
+        nota_rank = "" if MOSTRAR_RANKING else " · ranking por técnico desativado"
+        secao_eficacia = f"""
+<section class="secao" id="eficacia" data-scroll aria-labelledby="t-eficacia">
+  <header class="secao-cabeca dividida">
+    {titulo_secao("Eficácia", "eficacia")}
+    <div class="lado">
+      <h3 class="titulo-escuro">{esc(titulo_rank)}</h3>
+      <p class="legenda-escura" title="{esc(dias_txt)}">Soma dos últimos {len(rank["dias"])} dia(s) útil(eis) registrado(s). <b>Total {fmt_num(rank["total_periodo"])}</b>{esc(nota_rank)}</p>
+    </div>
+  </header>
+  <article class="card card-ranking" style="--i:0" data-scroll>{render_ranking(nomes_rank, valores_rank)}</article>
+</section>"""
 
-    # (e) tabela de licenças
+    # ================================================================ 4. LICENÇAS
     if licencas is None:
-        secao_lic = '<div class="panel reveal"><p class="empty">Fonte indisponível: licenças.</p></div>'
+        secao_licencas = secao_vazia("licencas", "Licenças", "Fonte indisponível: licenças.")
     elif not lic_itens:
-        secao_lic = '<div class="panel reveal"><p class="empty">Nenhuma licença vencida recentemente ou vencendo em breve.</p></div>'
+        secao_licencas = secao_vazia("licencas", "Licenças", "Nenhuma licença vencida recentemente ou vencendo em breve.")
     else:
         linhas = []
         for it in lic_itens:
-            cls, rot = classificar_licenca(it)
+            cls, _ = classificar_licenca(it)
+            vencida = cls == "st-critico"
             d = it["dias"]
             if d is None:
-                dias_txt = "—"
+                prazo = "—"
             elif d < 0:
-                dias_txt = f"há {abs(d)} d"
+                prazo = f"há {abs(d)} d"
             elif d == 0:
-                dias_txt = "hoje"
+                prazo = "hoje"
             else:
-                dias_txt = f"em {d} d"
+                prazo = f"em {d} d"
+            urgente = " urgente" if (not vencida and d is not None and d <= 7) else ""
             linhas.append(
-                f"<tr><td><span class='badge {cls}'>{rot}</span></td><td>{esc(it['cliente'])}</td>"
-                f"<td>{esc(it['sistema'])}</td><td class='num'>{esc(it['vencimento'])}</td><td class='num'>{dias_txt}</td></tr>"
+                f'<tr><td><span class="pill {"vencida" if vencida else "vencendo"}">{"Vencida" if vencida else "Vencendo"}</span></td>'
+                f'<td>{esc(it["cliente"])}</td><td>{esc(it["sistema"])}</td>'
+                f'<td class="num">{esc(it["vencimento"])}</td><td class="num{urgente}">{prazo}</td></tr>'
             )
         nota = ""
         if vencidas_antigas not in (None, ""):
-            nota = f'<p class="note">Além destas, {fmt_num(vencidas_antigas)} licença(s) vencida(s) há mais tempo não são listadas aqui.</p>'
-        secao_lic = f"""
-<div class="panel reveal"><div class="table-wrap"><table class="lic">
-<thead><tr><th>Status</th><th>Cliente</th><th>Sistema</th><th class="num">Vencimento</th><th class="num">Prazo</th></tr></thead>
-<tbody>{''.join(linhas)}</tbody></table></div>{nota}</div>"""
+            nota = f'<p class="nota-escura">Além destas, {fmt_num(vencidas_antigas)} licença(s) vencida(s) há mais tempo não são listadas aqui.</p>'
+        secao_licencas = f"""
+<section class="secao" id="licencas" aria-labelledby="t-licencas">
+  <header class="secao-cabeca centro">{titulo_secao("Licenças", "licencas")}</header>
+  <div class="tabela-clara" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
+    <table class="tabela-lic"><caption class="sr-only">Licenças vencidas recentemente e vencendo em breve, por urgência</caption>
+      <thead><tr><th scope="col">Status</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
+      <tbody>{''.join(linhas)}</tbody></table>
+  </div>
+  {nota}
+</section>"""
 
-    # (f) briefing
+    # ================================================================ 5. BRIEFING
     if relatorio is None:
-        secao_briefing = '<div class="panel reveal"><p class="empty">Briefing indisponível (relatorio.md ausente ou vazio).</p></div>'
+        secao_briefing = secao_vazia("briefing", "Briefing do Dia", "Briefing indisponível (relatorio.md ausente ou vazio).", centro=False)
     else:
         texto = relatorio if MOSTRAR_RANKING else redigir_nomes(relatorio, nomes_tecnicos)
-        secao_briefing = f'<div class="panel briefing reveal">{markdown_para_html(texto)}</div>'
+        titulo_h1, slides = dividir_briefing(texto)
+        data_brief = data_do_briefing(titulo_h1) or agora.strftime("%d/%m/%Y %H:%M")
+        if not slides:
+            slides = [{"titulo": "Briefing", "md": texto}]
+        itens_slides, pontos = [], []
+        for i, s in enumerate(slides):
+            corpo_md = s["md"]
+            n_itens = len(re.findall(r"^\s*[-*+]\s+", corpo_md, flags=re.M))
+            duas = " duas-colunas" if (n_itens >= 5 or len(corpo_md) > 650) and not re.search(r"^\s*\d+[.)]\s+", corpo_md, flags=re.M) else ""
+            corpo = markdown_para_html(corpo_md, base=4) or "<p>—</p>"
+            itens_slides.append(
+                f'<li class="slide" role="group" aria-roledescription="slide" aria-label="{i + 1} de {len(slides)}: {esc(s["titulo"])}">'
+                f'<article class="card card-slide" data-scroll><h3>{esc(s["titulo"])}</h3><div class="slide-corpo{duas}">{corpo}</div></article></li>'
+            )
+            pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
+        secao_briefing = f"""
+<section class="secao" id="briefing" aria-labelledby="t-briefing">
+  <header class="secao-cabeca cabeca-briefing">{titulo_secao("Briefing do Dia", "briefing")}<p class="carimbo-briefing">{esc(data_brief)}</p></header>
+  <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos do briefing">
+    <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
+    <div class="slider-controles">
+      <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
+      <div class="indicadores" role="tablist" aria-label="Tópicos">{''.join(pontos)}</div>
+      <button class="seta" type="button" data-dir="1" aria-label="Próximo tópico">›</button>
+    </div>
+  </div>
+</section>"""
 
-    # (g) rodapé
-    itens_fontes = []
+    # ================================================================ 6. FONTES
+    rotulo_estado = {"ok": "Atualizada", "desatualizada": "Desatualizada", "indisponivel": "Indisponível"}
+    cards_fontes = []
     for i, (chave, f) in enumerate(fontes.items()):
         estado = f["estado"]
-        rotulo_estado = {"ok": "ok", "desatualizada": "desatualizada", "indisponivel": "indisponível"}[estado]
-        itens_fontes.append(
-            f'<li class="reveal" style="--d:{i * 0.08:.2f}s"><span class="dot {estado}"></span><div><strong>{esc(f["rotulo"])}</strong>'
-            f'<span class="info">coletado em {esc(fmt_dt(f["coletado_em"]))} · {rotulo_estado} ({esc(f["detalhe"])})</span></div></li>'
-        )
-    if email:
-        extra_email = (f'<p class="note reveal">E-mail: {fmt_num(email.get("nao_lidos"))} não lidos · '
-                       f'{fmt_num(email.get("recebidos_hoje"))} recebidos hoje · {fmt_num(email.get("spam_hoje"))} spam hoje</p>')
-    else:
-        extra_email = ""
+        d = dados[chave] or {}
+        stats = ""
+        if chave == "email" and d:
+            stats = (f'<ul class="mini-stats"><li><b>{fmt_num(d.get("nao_lidos"))}</b><span>não lidos</span></li>'
+                     f'<li><b>{fmt_num(d.get("recebidos_hoje"))}</b><span>recebidos hoje</span></li>'
+                     f'<li><b>{fmt_num(d.get("spam_hoje"))}</b><span>spam hoje</span></li></ul>')
+        elif chave == "helpdesk" and d:
+            agentes = d.get("agentes_monitorados") if isinstance(d.get("agentes_monitorados"), list) else []
+            stats = (f'<ul class="mini-stats"><li><b>{fmt_num(d.get("fila_total_abertos"))}</b><span>na fila</span></li>'
+                     f'<li><b>{fmt_num(d.get("meus_abertos"))}</b><span>abertos da equipe</span></li>'
+                     f'<li><b>{fmt_num(len(agentes)) if agentes else "—"}</b><span>agentes monitorados</span></li></ul>')
+        elif chave == "licencas" and d:
+            stats = (f'<ul class="mini-stats"><li><b>{fmt_num(n_vencendo)}</b><span>vencendo</span></li>'
+                     f'<li><b>{fmt_num(n_vencidas)}</b><span>vencidas recentes</span></li>'
+                     f'<li><b>{fmt_num(d.get("ignoradas_homolog_teste"))}</b><span>homolog./teste ignoradas</span></li></ul>')
+        detalhe = {"ok": "dentro do limite de 24 h", "desatualizada": f"coleta {esc(f['detalhe'])} · limite de 24 h",
+                   "indisponivel": esc(f["detalhe"])}[estado]
+        cards_fontes.append(f"""
+<article class="card card-fonte" style="--i:{i}" aria-labelledby="f-{chave}">
+  <div class="fonte-cabeca"><h3 class="card-titulo" id="f-{chave}">{esc(f["rotulo"])}</h3><span class="estado {estado}">{rotulo_estado[estado]}</span></div>
+  <p class="fonte-hora"><span>Coletado em</span><b>{esc(fmt_dt(f["coletado_em"]))}</b></p>
+  <p class="fonte-detalhe">{detalhe}</p>
+  {stats}
+</article>""")
+    secao_fontes = f"""
+<section class="secao" id="fontes" data-scroll aria-labelledby="t-fontes">
+  <header class="secao-cabeca centro">{titulo_secao("Fontes", "fontes")}<p class="subtitulo">status da coleta de hoje</p></header>
+  <div class="grade-fontes">{''.join(cards_fontes)}</div>
+  <p class="nota-escura">Arquivo estático gerado por gerar_dashboard.py · sem dependências externas · pode ser copiado sozinho.</p>
+</section>"""
 
-    # ------------------------------------------------------------------ JS
-    payload = {
-        "labels": serie["labels"],
-        "fila": serie["fila"],
-        "atend": serie["atend"],
-        "rank": ({"labels": rank["tecnicos"], "valores": rank["valores"], "titulo": "Atendimentos"}
-                 if MOSTRAR_RANKING else {"labels": rank["dias"], "valores": rank["totais"], "titulo": "Atendimentos (equipe)"}),
-        "rankHorizontal": MOSTRAR_RANKING,
-    }
-    script = f"<script>{JS_UI}</script>"
-    if chart_js is not None:
-        script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload))}</script>"
-
+    # ================================================================ cabeçalho
     gerado_em = agora.strftime("%d/%m/%Y %H:%M")
     data_dados = date.today().strftime("%d/%m/%Y")
+    avisos = ""
+    if fontes_desatualizadas:
+        avisos += f'<a class="aviso" href="#fontes" data-alvo="fontes">{len(fontes_desatualizadas)} fonte(s) desatualizada(s)</a>'
+    if fontes_indisponiveis:
+        avisos += f'<a class="aviso grave" href="#fontes" data-alvo="fontes">{len(fontes_indisponiveis)} fonte(s) indisponível(is)</a>'
+
+    favo_cheio, _ = favo_svg(FAVO_CHEIO, passo=63, fonte=12, classe="favo-cheio")
+    favo_compacto, _ = favo_svg(FAVO_COMPACTO, passo=66, fonte=12, classe="favo-compacto")
+    menu_simples = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in FAVO_ORDEM)
+
+    payload = {"labels": serie["labels"], "fila": serie["fila"], "atend": serie["atend"]}
+    script = f"<script>{JS_UI}</script>"
+    if chart_js is not None and n_dias:
+        script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload))}</script>"
+
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Briefing diário — {esc(gerado_em)}</title>
-<style>{CSS}</style>
-<script>document.documentElement.classList.add("js");</script>
+<title>Briefing Diário — {esc(data_dados)}</title>
+<style>{fontes_css}{CSS}</style>
 </head>
 <body>
-<div class="ambient" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
-
-<header class="bar">
-  <div class="in">
-    <div class="brand"><span class="logo"></span>Briefing diário</div>
-    <nav class="seg" aria-label="Seções">
-      <a href="#destaques" class="active">Destaques</a>
-      <a href="#evolucao">Evolução</a>
-      <a href="#produtividade">Produtividade</a>
-      <a href="#licencas">Licenças</a>
-      <a href="#briefing">Briefing</a>
-      <a href="#fontes">Fontes</a>
-    </nav>
-    <span class="stamp">Gerado em {esc(gerado_em)}</span>
-  </div>
+<a class="pular" href="#destaques">Ir para o conteúdo</a>
+<div class="palco">
+<header class="topo">
+  <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Briefing Diário — início">
+    {ABELHA_SVG}
+    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing</span><span class="w">Diário</span></h1>
+  </a>
+  <nav class="favo" aria-label="Seções do briefing">
+    {favo_cheio}
+    {favo_compacto}
+    <div class="menu-simples">{menu_simples}</div>
+  </nav>
 </header>
-
-<div class="wrap">
-<div class="hero">
-  <h1>Briefing diário</h1>
-  <p>Gerado em {esc(gerado_em)} · dados de {esc(data_dados)}</p>
-</div>
-{banner}
-
-<section id="destaques" aria-label="Destaques do dia">
-  {sec_head("Destaques do dia")}
-  <div class="cards">{cards_html}</div>
-</section>
-
-<section id="evolucao" aria-label="Evolução">
-  {sec_head("Evolução", f"últimos {DIAS_GRAFICO} dias")}
-  {aviso_graficos}
-  {secao_linhas}
-</section>
-
-<section id="produtividade" aria-label="Produtividade semanal">
-  {sec_head("Produtividade semanal")}
-  {secao_barras}
-</section>
-
-<section id="licencas" aria-label="Licenças críticas">
-  {sec_head("Licenças críticas")}
-  {secao_lic}
-</section>
-
-<section id="briefing" aria-label="Briefing do dia">
-  {sec_head("Briefing do dia")}
-  {secao_briefing}
-</section>
-
-<footer id="fontes">
-  {sec_head("Status das fontes")}
-  <ul class="fontes">{''.join(itens_fontes)}</ul>
-  {extra_email}
-  <p class="note reveal">Arquivo estático gerado por gerar_dashboard.py. Sem dependências externas; pode ser copiado sozinho.</p>
-</footer>
+<p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{avisos}</p>
+<main class="colmeia" id="colmeia">
+{secao_destaques}
+{secao_evolucao}
+{secao_eficacia}
+{secao_licencas}
+{secao_briefing}
+{secao_fontes}
+</main>
 </div>
 {script}
 </body>
