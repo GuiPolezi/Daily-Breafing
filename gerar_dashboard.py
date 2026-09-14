@@ -491,23 +491,107 @@ def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe:
     largura = max(p[0] for p in todos) - min_x + 2 * margem
     altura = max(p[1] for p in todos) - min_y + 2 * margem
 
-    def pontos(cx: float, cy: float, r: float) -> str:
-        return " ".join(f"{x - min_x + margem:.1f},{y - min_y + margem:.1f}" for x, y in vertices(cx, cy, r))
+    def local(x: float, y: float) -> tuple[float, float]:
+        return x - min_x + margem, y - min_y + margem
 
-    deco, nav = [], []
+    def pontos(cx: float, cy: float, r: float) -> str:
+        return " ".join("%.1f,%.1f" % local(x, y) for x, y in vertices(cx, cy, r))
+
+    # entrada em onda radial (GSAP): atraso de cada célula proporcional à distância ao centro do conjunto
+    centro_x = sum(cx for cx, _ in centros.values()) / len(centros)
+    centro_y = sum(cy for _, cy in centros.values()) / len(centros)
+    dist = {c: math.hypot(cx - centro_x, cy - centro_y) for c, (cx, cy) in centros.items()}
+    dist_max = max(dist.values()) or 1.0
+
+    # mel escorrendo. Gotas de borda: nada sob o vértice inferior, o pingo cai longe. Gotas internas: o vértice
+    # aponta para o vão entre duas células decorativas de baixo, o pingo pousa nelas. Nunca sobre célula de navegação.
+    ang_baixo = math.radians(FAVO_ANGULO + 30)  # vértice mais baixo da célula (74,75°)
+
+    def sob_vertice(c: tuple[int, int]) -> list[tuple[int, int]]:
+        cx, cy = centros[c]
+        vx, vy = cx + r_deco * math.cos(ang_baixo), cy + r_deco * math.sin(ang_baixo)
+        return [o for o, (ox, oy) in centros.items() if o != c and abs(ox - vx) < passo * 0.6 and oy > vy - passo * 0.15]
+
+    decorativas = sorted((c for c in centros if FAVO_NAV.get(c) is None), key=lambda c: centros[c][0])
+    borda = [c for c in decorativas if not sob_vertice(c)]
+    internas = [c for c in decorativas if sob_vertice(c) and all(FAVO_NAV.get(o) is None for o in sob_vertice(c))]
+
+    def espalhar(lista: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
+        if n <= 0 or not lista:
+            return []
+        if len(lista) <= n:
+            return list(lista)
+        if n == 1:
+            return [lista[len(lista) // 2]]
+        salto = (len(lista) - 1) / (n - 1)
+        return [lista[round(i * salto)] for i in range(n)]
+
+    grande = len(celulas) > 12
+    com_gota: dict[tuple[int, int], str] = {c: "borda" for c in espalhar(borda, 3 if grande else 2)}
+    for _ in range(2 if grande else 1):  # internas: as mais afastadas das gotas já escolhidas
+        livres = [c for c in internas if c not in com_gota]
+        if not livres:
+            break
+        if com_gota:
+            melhor = max(livres, key=lambda c: min(math.dist(centros[c], centros[e]) for e in com_gota))
+        else:
+            melhor = livres[len(livres) // 2]
+        com_gota[melhor] = "interna"
+    tamanhos = {"borda": [(16.0, 3.6), (13.0, 3.2), (11.0, 2.8)], "interna": [(10.0, 2.6), (8.5, 2.3)]}  # (comprimento, meia-largura)
+
+    def gota(cx: float, cy: float, r: float, comp: float, meia: float, tipo: str) -> str:
+        vx, vy = local(*vertices(cx, cy, r)[1])  # vértice mais baixo da célula (74,75°)
+        x0, y0 = local(cx, cy)
+        caminho = f'd="M{x0:.1f},{y0 + r * 0.15:.1f} Q{vx - 1.5:.1f},{(y0 + vy) / 2:.1f} {vx:.1f},{vy:.1f}"'
+        fio, fluxo = f'<path class="fio" {caminho}/>', f'<path class="fluxo" {caminho}/>'
+        corpo = (f'<path class="mel" d="M{vx:.1f},{vy:.1f} '
+                 f'C{vx - meia * .6:.1f},{vy + comp * .35:.1f} {vx - meia:.1f},{vy + comp * .55:.1f} {vx - meia:.1f},{vy + comp - meia:.1f} '
+                 f'A{meia:.1f},{meia:.1f} 0 0 0 {vx + meia:.1f},{vy + comp - meia:.1f} '
+                 f'C{vx + meia:.1f},{vy + comp * .55:.1f} {vx + meia * .6:.1f},{vy + comp * .35:.1f} {vx:.1f},{vy:.1f}Z"/>')
+        brilho = (f'<ellipse class="brilho" cx="{vx - meia * .35:.1f}" cy="{vy + comp - meia - 1:.1f}" '
+                  f'rx="{meia * .3:.1f}" ry="{meia * .55:.1f}"/>')
+        pingo = f'<circle class="pingo" cx="{vx:.1f}" cy="{vy + comp + 1:.1f}" r="{meia * .55:.1f}"/>'
+        return f'<g class="gota {tipo}">{fio}{fluxo}<g class="bojo">{corpo}{brilho}</g>{pingo}</g>'
+
+    deco, nav, gotas = [], [], []
     for c, (cx, cy) in centros.items():
         alvo = FAVO_NAV.get(c)
+        d = f"{0.45 * dist[c] / dist_max:.2f}"
         if alvo is None:
-            deco.append(f'<polygon class="cel deco" points="{pontos(cx, cy, r_deco)}"/>')
+            cheia = " cheia" if c in com_gota else ""
+            deco.append(f'<polygon class="cel deco{cheia}" data-d="{d}" points="{pontos(cx, cy, r_deco)}"/>')
         else:
-            tx, ty = cx - min_x + margem, cy - min_y + margem
+            tx, ty = local(cx, cy)
             nav.append(
-                f'<a class="cel nav" href="#{alvo}" data-alvo="{alvo}" aria-label="Ir para {esc(rotulos[alvo])}">'
+                f'<a class="cel nav" href="#{alvo}" data-alvo="{alvo}" data-d="{d}" aria-label="Ir para {esc(rotulos[alvo])}">'
                 f'<polygon points="{pontos(cx, cy, r_nav)}"/>'
                 f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="{fonte:g}" text-anchor="middle" dominant-baseline="central">{esc(rotulos[alvo])}</text></a>'
             )
-    svg = (f'<svg class="favo-svg {classe}" viewBox="0 0 {largura:.0f} {altura:.0f}" '
-           f'style="--favo-h:{altura:.0f}px" aria-hidden="false">' + "".join(deco) + "".join(nav) + "</svg>")
+    contagem = {"borda": 0, "interna": 0}
+    for c, tipo in com_gota.items():
+        comp, meia = tamanhos[tipo][contagem[tipo] % len(tamanhos[tipo])]
+        contagem[tipo] += 1
+        gotas.append(gota(*centros[c], r_deco, comp, meia, tipo))
+
+    # gradientes e sombra ficam dentro de cada SVG (os dois favos coexistem no DOM), ids sufixados pela classe
+    def grad(nome: str, de: str, ate: str) -> str:
+        return (f'<linearGradient id="g-{nome}-{classe}" x1="0" y1="0" x2=".25" y2="1">'
+                f'<stop offset="0" stop-color="{de}"/><stop offset="1" stop-color="{ate}"/></linearGradient>')
+
+    defs = (
+        "<defs>"
+        + grad("nav", "#eba93b", "#d48b1e") + grad("deco", "#ecb14f", "#dc9a30")
+        + grad("cheia", "#fbcb4e", "#eaa221") + grad("ativa", "#ffdc6a", "#f8bf30") + grad("gota", "#f7bb33", "#df8a17")
+        + f'<filter id="sombra-{classe}" x="-20%" y="-20%" width="140%" height="160%" color-interpolation-filters="sRGB">'
+        '<feDropShadow dx="0" dy="1.5" stdDeviation="1" flood-color="#7a4d0c" flood-opacity=".22"/>'
+        '<feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#8a5a12" flood-opacity=".22"/>'
+        "</filter></defs>"
+    )
+    estilo = (f"--favo-h:{altura:.0f}px;--g-nav:url(#g-nav-{classe});--g-deco:url(#g-deco-{classe});"
+              f"--g-cheia:url(#g-cheia-{classe});--g-ativa:url(#g-ativa-{classe});--g-gota:url(#g-gota-{classe})")
+    svg = (f'<svg class="favo-svg {classe}" viewBox="0 0 {largura:.0f} {altura:.0f}" style="{estilo}" aria-hidden="false">'
+           + defs + f'<g class="favo-corpo" filter="url(#sombra-{classe})">'
+           + "".join(deco) + "".join(nav) + "".join(gotas) + "</g></svg>")
     return svg, altura
 
 
@@ -590,7 +674,7 @@ a{color:inherit}
 .wordmark .w{display:block;position:relative;width:max-content}
 .wordmark .traco{position:absolute;left:0;top:53%;height:3px;width:var(--traco-w,100%);display:block;overflow:visible;fill:var(--traco);pointer-events:none}
 /* entrada animada (GSAP): html.anim esconde até o script assumir; sem JS ou sem GSAP a classe não existe */
-.anim .abelha,.anim .wordmark .w{opacity:0}
+.anim .abelha,.anim .wordmark .w,.anim .favo-svg{opacity:0}
 .carimbo{flex:0 0 auto;margin:0 0 8px calc(var(--pad) - 2px);font-size:var(--t-meta);font-weight:700;color:var(--carimbo);letter-spacing:.01em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .carimbo .sep{opacity:.55}
 .carimbo .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:2px 10px;border-radius:999px;text-decoration:none}
@@ -601,15 +685,27 @@ a{color:inherit}
 .favo-svg{height:min(var(--favo-h),calc(var(--topo-h) - 12px));width:auto;overflow:visible;display:block}
 .favo-cheio{display:none}
 @media (min-height:960px) and (min-width:1180px){.favo-cheio{display:block}.favo-compacto{display:none}}
-.cel.nav polygon{fill:var(--mel);transition:fill .2s var(--ease)}
-.cel.deco{fill:var(--mel-deco)}
-.cel.nav{cursor:pointer;transform-box:fill-box;transform-origin:center;transition:transform .2s var(--ease),filter .2s var(--ease);outline:none}
+/* células: gradiente sutil (mais claro no topo) + filete claro na borda; a sombra é um filtro só, no grupo .favo-corpo */
+.favo-svg polygon{stroke:rgba(255,241,205,.34);stroke-width:1;stroke-linejoin:round}
+.cel.nav polygon{fill:var(--g-nav,var(--mel))}
+.cel.deco{fill:var(--g-deco,var(--mel-deco))}
+.cel.deco.cheia{fill:var(--g-cheia,var(--mel-claro))}
+.cel.nav{cursor:pointer;transition:transform .2s var(--ease),filter .25s var(--ease);outline:none}
+/* origem central só no fallback CSS: com GSAP a origem já vem embutida na matriz do atributo transform */
+html:not(.gsap) .cel.nav{transform-box:fill-box;transform-origin:center}
 .cel.nav text{fill:var(--oliva-escuro);font-family:var(--sans);font-weight:700;letter-spacing:-.01em;pointer-events:none;user-select:none}
-.cel.nav:hover,.cel.nav:focus-visible{transform:scale(1.09);filter:drop-shadow(0 4px 6px rgba(67,60,44,.35))}
-.cel.nav:hover polygon,.cel.nav:focus-visible polygon{fill:var(--mel-hover)}
+/* sem GSAP o hover escala por CSS; com GSAP a escala é dele (transform CSS sobrescreveria o atributo) */
+html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:scale(1.09)}
+.cel.nav:hover,.cel.nav:focus-visible{filter:brightness(1.07) drop-shadow(0 5px 7px rgba(67,60,44,.32))}
 .cel.nav:focus-visible polygon{stroke:var(--oliva-escuro);stroke-width:2}
-.cel.nav.ativa polygon{fill:var(--mel-claro)}
-.cel.nav.ativa{filter:drop-shadow(0 3px 5px rgba(67,60,44,.3))}
+.cel.nav.ativa polygon{fill:var(--g-ativa,var(--mel-claro))}
+.cel.nav.ativa{filter:drop-shadow(0 3px 5px rgba(67,60,44,.28))}
+/* mel escorrendo: fio na face da célula, gota com brilho; o pingo que cai só existe com GSAP */
+.gota .fio{fill:none;stroke:rgba(235,150,30,.5);stroke-width:2.2;stroke-linecap:round}
+.gota .fluxo{fill:none;stroke:rgba(255,214,110,.9);stroke-width:2.4;stroke-linecap:round;opacity:0}
+.gota .mel{fill:var(--g-gota,var(--mel))}
+.gota .brilho{fill:#fff3c4;opacity:.55}
+.gota .pingo{fill:#e9961c;opacity:0}
 .menu-simples{display:none}
 
 /* ---- container amarelo e seções ---- */
@@ -1107,7 +1203,7 @@ JS_UI = """
 })();
 """
 
-# --- JS: entrada do cabeçalho (abelha + letreiro), parallax do mouse — requer GSAP ---
+# --- JS: entrada do cabeçalho (abelha, letreiro e favo), hover do favo, parallax do mouse — requer GSAP ---
 JS_HEADER = """
 (function(){
   "use strict";
@@ -1116,6 +1212,7 @@ JS_HEADER = """
   var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
   var g = win.gsap;
   if (!g || rm) { soltar(); return; }
+  raiz.classList.add("gsap");  // o CSS deixa a escala do hover por conta do GSAP
   try {
     var abelha = doc.querySelector(".abelha"), voo = doc.querySelector(".abelha-voo");
     var asaE = doc.querySelector(".abelha .asa-e"), asaD = doc.querySelector(".abelha .asa-d");
@@ -1145,6 +1242,60 @@ JS_HEADER = """
       // repouso: flutuação lenta e contínua
       .add(function(){ g.to(voo, { y: "+=4", duration: 2.6, yoyo: true, repeat: -1, ease: "sine.inOut" }); });
 
+    // favo de mel: anima só a variante visível agora (a outra está em display:none)
+    var favo = Array.prototype.filter.call(doc.querySelectorAll(".favo-svg"), function(s){ return s.getBoundingClientRect().width > 0; })[0];
+    if (favo) {
+      var corpo = favo.querySelector(".favo-corpo"), cels = favo.querySelectorAll(".cel"), gotas = favo.querySelectorAll(".gota");
+      var atraso = function(i, el){ return parseFloat(el.getAttribute("data-d")) || 0; };
+      // o conjunto assenta enquanto as células surgem em onda do centro para fora; depois as gotas crescem
+      tl.from(corpo, { y: 14, rotation: -3, transformOrigin: "50% 50%", duration: 1.1, ease: "power3.out" }, .3)
+        .from(cels, { scale: .55, opacity: 0, transformOrigin: "50% 50%", duration: .8, ease: "back.out(1.7)", stagger: atraso }, .3)
+        .from(gotas, { scaleY: 0, opacity: 0, transformOrigin: "50% 0%", duration: 1.1, ease: "power2.inOut", stagger: .15 }, 1.0)
+        .add(function(){
+          // ciclo contínuo de cada gota, defasado das outras: solta o pingo, escorre de novo, cresce, espera cheia
+          // (gota de borda: pingo cai longe e some; interna: pousa na célula de baixo)
+          Array.prototype.forEach.call(gotas, function(gota, i){
+            var fluxo = gota.querySelector(".fluxo"), bojo = gota.querySelector(".bojo"), pingo = gota.querySelector(".pingo");
+            if (!fluxo || !bojo || !pingo) return;
+            var interna = gota.classList.contains("interna");
+            var L = fluxo.getTotalLength(), queda = interna ? 9 : 26;
+            var esperaCheia = [1.6, 2.6, 1.1, 3.1, 2.1][i % 5], esperaVazia = [.9, 1.4, 1.1, .7, 1.6][i % 5];
+            g.set(fluxo, { strokeDasharray: L, strokeDashoffset: L });
+            g.timeline({ repeat: -1, delay: .6 + i * 1.3 })
+              .to(bojo, { scaleY: 1.14, scaleX: .95, transformOrigin: "50% 0%", duration: .55, ease: "power2.in" })
+              .set(pingo, { y: 0, scale: 1, opacity: 1, transformOrigin: "50% 0%" })
+              .to(bojo, { scaleY: .55, scaleX: 1, transformOrigin: "50% 0%", duration: .9, ease: "elastic.out(1, .45)" }, "<")
+              .to(pingo, { y: queda, duration: interna ? .38 : .75, ease: "power1.in" }, "<")
+              .to(pingo, { opacity: 0, duration: interna ? .22 : .3, ease: "power1.out" }, interna ? "<.2" : "<.45")
+              .fromTo(fluxo, { strokeDashoffset: L, opacity: 1 }, { strokeDashoffset: 0, duration: 1.3, ease: "power1.inOut" }, "+=" + esperaVazia)
+              .to(fluxo, { opacity: 0, duration: .7, ease: "power1.out" }, ">-.2")
+              .to(bojo, { scaleY: 1, scaleX: 1, transformOrigin: "50% 0%", duration: 2.6, ease: "sine.inOut" }, "<-.6")
+              .to({}, { duration: esperaCheia });
+          });
+        });
+    }
+
+    // hover das células: a célula se eleva (escala leve + sobe 2 px) e as vizinhas recuam, sem cobrir rótulos
+    var centro = function(el){ var bb = el.getBBox(); return { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, w: bb.width }; };
+    var vizinhas = function(cel){
+      var c = centro(cel), lista = [];
+      Array.prototype.forEach.call(cel.ownerSVGElement.querySelectorAll(".cel"), function(o){
+        if (o === cel) return;
+        var d = centro(o);
+        if (Math.hypot(d.x - c.x, d.y - c.y) < c.w * 1.25) lista.push(o);
+      });
+      return lista;
+    };
+    Array.prototype.forEach.call(doc.querySelectorAll(".favo-svg .cel.nav"), function(cel){
+      cel.addEventListener("pointerenter", function(){
+        g.to(cel, { scale: 1.08, y: -2, transformOrigin: "50% 50%", duration: .45, ease: "back.out(2.2)", overwrite: "auto" });
+        g.to(vizinhas(cel), { scale: .965, transformOrigin: "50% 50%", duration: .5, ease: "power2.out", overwrite: "auto" });
+      });
+      cel.addEventListener("pointerleave", function(){
+        g.to([cel].concat(vizinhas(cel)), { scale: 1, y: 0, transformOrigin: "50% 50%", duration: .55, ease: "power3.out", overwrite: "auto" });
+      });
+    });
+
     var fino = !!(win.matchMedia && win.matchMedia("(hover: hover) and (pointer: fine)").matches);
     if (marca && fino) marca.addEventListener("pointerenter", function(){ bater(4); });
 
@@ -1154,7 +1305,8 @@ JS_HEADER = """
       var opc = { duration: .7, ease: "power3.out" };
       var ax = g.quickTo(abelha, "x", opc), ay = g.quickTo(abelha, "y", opc);
       var wx = g.quickTo(wordmark, "x", opc), wy = g.quickTo(wordmark, "y", opc);
-      var mover = function(nx, ny){ ax(nx * 9); ay(ny * 7); wx(nx * 4); wy(ny * 3); };
+      var fx = g.quickTo(".favo-svg", "x", opc), fy = g.quickTo(".favo-svg", "y", opc);  // favo em outra profundidade
+      var mover = function(nx, ny){ ax(nx * 9); ay(ny * 7); wx(nx * 4); wy(ny * 3); fx(nx * -5); fy(ny * -4); };
       win.addEventListener("pointermove", function(e){
         if (!mq.matches || e.pointerType === "touch") return;
         mover((e.clientX / win.innerWidth) * 2 - 1, (e.clientY / win.innerHeight) * 2 - 1);
