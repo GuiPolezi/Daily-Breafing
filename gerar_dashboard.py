@@ -449,8 +449,8 @@ def carregar_fontes_css() -> str:
 # Malha "pointy-top" rotacionada -15,25° (medida nos mockups). Eixo u a 44,75°,
 # eixo v a 104,75°; coordenadas (u, v) das células, com (0,0) = Fontes.
 FAVO_ORDEM = [
-    ("destaques", "Destaques"), ("evolucao", "Evolução"), ("eficacia", "Eficácia"),
-    ("licencas", "Licenças"), ("briefing", "Briefing"), ("fontes", "Fontes"),
+    ("destaques", "Destaques"), ("briefing", "Briefing"), ("licencas", "Licenças"),
+    ("evolucao", "Evolução"), ("eficacia", "Eficácia"), ("fontes", "Fontes"),
 ]
 FAVO_NAV = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia",
             (1, -1): "licencas", (0, -1): "briefing", (0, 0): "fontes"}
@@ -1593,10 +1593,10 @@ def gerar_html() -> str:
 <p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{avisos}</p>
 <main class="colmeia" id="colmeia">
 {secao_destaques}
+{secao_briefing}
+{secao_licencas}
 {secao_evolucao}
 {secao_eficacia}
-{secao_licencas}
-{secao_briefing}
 {secao_fontes}
 </main>
 </div>
