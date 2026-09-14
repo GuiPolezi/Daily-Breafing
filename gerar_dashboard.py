@@ -646,7 +646,8 @@ CSS = """
   --ease:cubic-bezier(.22,.61,.36,1);--ease-out:cubic-bezier(.16,1,.3,1);
   /* ritmo: escala 1.25 a partir de 15px (12 / 15 / 19 / 24 / 30 / 37 / 47 / 58 / 73) */
   --t-meta:12.5px;--t-corpo:15px;
-  --t-hero:clamp(38px,min(7.6vh,4.6vw),82px);--t-num:clamp(42px,min(7vh,4.2vw),72px);--t-num-2:clamp(30px,min(5vh,3vw),52px);
+  --t-hero:clamp(38px,min(7.6vh,4.6vw),82px);--t-num:clamp(56px,min(10vh,5.2vw),112px);--t-num-2:clamp(30px,min(5.6vh,3vw),60px);
+  --t-rotulo:clamp(11.5px,1.6vh,14px);
   --t-card:clamp(17px,min(2.6vh,1.35vw),24px);
   --topo-h:clamp(180px,29vh,330px);
   --margem:clamp(14px,1.4vw,24px);--pad:clamp(18px,2.2vw,36px);--gap:clamp(14px,1.8vw,28px);--pad-card:clamp(18px,2vw,30px);
@@ -733,32 +734,44 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .card{background:var(--oliva);color:var(--marfim);border-radius:var(--r-card);padding:var(--pad-card);display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;position:relative;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
 .card:hover{transform:translateY(-3px);box-shadow:0 18px 36px -12px rgba(40,54,24,.5)}
 @keyframes entrar{from{opacity:0;transform:translateY(16px)}}
-.card-medida{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
 .card-titulo{font:700 var(--t-card)/1.15 var(--sans);color:var(--verde);letter-spacing:-.01em}
-.card-titulo small{display:block;font-size:.8em;color:var(--verde-texto);font-weight:600;margin-top:.2em}
-.card-numero{font:italic 800 var(--t-num)/.9 var(--sans);color:var(--oliva-escuro);letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap;padding-right:.06em}
-.card-numero.menor{font-size:var(--t-num-2)}
-.card-numero-bloco{text-align:right}
-.card-sub{font-size:clamp(14px,1.9vh,18px);font-weight:600;color:var(--verde-texto)}
-.card-rodape{margin-top:auto;text-align:center;font-size:var(--t-meta);font-weight:600;color:rgba(254,250,224,.55)}
-.badges{display:flex;flex-wrap:wrap;gap:8px}
 .badge{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;background:var(--marfim);color:var(--vermelho);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;line-height:1.4;white-space:nowrap}
 .badge b{font-size:14px;font-weight:700}
 .badge.bom{color:var(--bom)}
 .badge.neutro{color:var(--oliva)}
 .badge.aviso{background:var(--ambar-bg);color:var(--ambar-ink)}
 .badge.grave{background:var(--verm-bg);color:var(--verm-ink)}
-.quebra{font-weight:700;color:var(--verde);font-size:clamp(14px,1.9vh,17px);display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:auto}
-.quebra .sep{color:rgba(184,216,110,.55)}
 
 /* Destaques */
 .grade-destaques{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto 1fr;gap:var(--gap)}
 .grade-destaques .card{min-height:auto}
 .grade-destaques .titulo-secao{align-self:start;padding-top:.12em}
-.card-largo{grid-column:2 / span 2}
-.card-largo .card-topo{display:grid;grid-template-columns:1fr auto;gap:var(--gap);align-items:start}
-.card-largo .card-medida{justify-content:flex-start;gap:clamp(16px,2vw,32px)}
-.card-largo .card-medida.secundaria{padding-right:clamp(0px,1vw,16px)}
+/* anatomia única dos KPIs: rótulo em caixa alta, número (marfim, itálico 800), linha de julgamento (delta), rodapé de contexto.
+   O estado da fonte é etiqueta na linha do rótulo, metadado separado do delta de negócio. */
+.kpi-primario{grid-column:2 / span 2}
+.kpi{gap:clamp(8px,1.2vh,14px)}
+.kpi-cabeca{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px 12px}
+.kpi-rotulo{font:700 var(--t-rotulo)/1.3 var(--sans);color:var(--verde);letter-spacing:.09em;text-transform:uppercase}
+.kpi-fonte{margin-left:auto;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1.5;padding:2px 10px;border-radius:999px;background:var(--ambar-bg);color:var(--ambar-ink);white-space:nowrap}
+.kpi-fonte.grave{background:var(--verm-bg);color:var(--verm-ink)}
+.kpi-numero{font:italic 800 var(--t-num)/.9 var(--sans);color:var(--marfim);letter-spacing:-.045em;font-variant-numeric:tabular-nums;white-space:nowrap;padding-right:.06em}
+.kpi-numero.menor{font-size:var(--t-num-2)}
+.kpi-numero .sem-dado{color:rgba(254,250,224,.35)}
+.kpi-linha{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px clamp(16px,1.8vw,32px)}
+.kpi-juizo{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:26px}
+.kpi-secundario{font-size:clamp(14px,1.9vh,17px);font-weight:600;color:var(--verde-texto);white-space:nowrap}
+.kpi-secundario b{font:italic 800 clamp(24px,3.6vh,38px)/1 var(--sans);color:var(--marfim);letter-spacing:-.03em;margin-right:.12em}
+.kpi-par{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px clamp(20px,2.6vw,44px)}
+.kpi-legenda{font-size:clamp(13px,1.7vh,15px);font-weight:600;color:var(--verde-texto);margin-top:2px}
+.kpi-rodape{margin-top:auto;font-size:clamp(13px,1.7vh,15px);font-weight:600;color:var(--verde-texto);line-height:1.4}
+.kpi-rodape b{color:var(--marfim);font-weight:700}
+.kpi-primario .kpi-corpo{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px clamp(20px,3vw,56px)}
+.kpi-quebra{display:flex;flex-direction:column;align-items:flex-end;gap:5px;font-size:clamp(13px,1.7vh,15px);font-weight:600;color:var(--verde-texto);line-height:1.4}
+.kpi-quebra .lista{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px}
+.kpi-quebra b{color:var(--marfim);font-weight:700}
+.kpi-quebra .sep{color:rgba(184,216,110,.45)}
+.kpi-quebra .titulo{color:var(--verde);text-transform:uppercase;letter-spacing:.07em;font-size:11.5px}
+.kpi-vazio{font:400 clamp(16px,2.2vh,20px)/1.3 var(--serif);color:rgba(246,227,197,.85)}
 
 /* Evolução */
 .graficos{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
@@ -895,9 +908,11 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
   .secao+.secao{border-top:1px solid rgba(40,54,24,.15)}
   .titulo-secao{font-size:clamp(36px,10vw,52px)}
   .grade-destaques{grid-template-columns:1fr;grid-template-rows:none}
-  .card-largo{grid-column:auto}
-  .card-largo .card-topo{grid-template-columns:1fr}
-  .card-numero{font-size:clamp(44px,12vw,64px)}
+  .kpi-primario{grid-column:auto}
+  .kpi-numero{font-size:clamp(44px,12vw,64px)}
+  .kpi-numero.menor{font-size:clamp(28px,7vw,40px)}
+  .kpi-quebra{align-items:flex-start}
+  .kpi-quebra .lista{justify-content:flex-start}
   .graficos{grid-template-columns:1fr}
   .grafico-caixa{height:240px !important}
   .secao-cabeca.dividida{grid-template-columns:1fr}
@@ -1417,12 +1432,12 @@ def badge_delta(atual, anterior, rotulo="vs. dia anterior", melhor="menor") -> s
     return f'<span class="badge {"bom" if bom else ""}"><span aria-hidden="true">{seta}</span><b>{abs(d)}</b> {esc(rotulo)}</span>'
 
 
-def badge_fonte(estado: dict) -> str:
-    """Aviso discreto no card quando a fonte está desatualizada ou indisponível."""
+def etiqueta_fonte(estado: dict) -> str:
+    """Etiqueta no canto do card quando a fonte está desatualizada ou indisponível (metadado, separado do delta)."""
     if estado["estado"] == "desatualizada":
-        return f'<span class="badge aviso">fonte desatualizada · coleta {esc(estado["detalhe"])}</span>'
+        return f'<span class="kpi-fonte aviso">fonte desatualizada · coleta {esc(estado["detalhe"])}</span>'
     if estado["estado"] == "indisponivel":
-        return '<span class="badge grave">fonte indisponível</span>'
+        return '<span class="kpi-fonte grave">fonte indisponível</span>'
     return ""
 
 
@@ -1520,95 +1535,95 @@ def gerar_html() -> str:
     nomes_tecnicos = coletar_nomes_tecnicos(historico, helpdesk)
 
     # ================================================================ 1. DESTAQUES
+    # Anatomia única: rótulo (caixa alta) + etiqueta de fonte, número, linha de julgamento (delta), rodapé de contexto.
+    def cabeca_kpi(id_: str, rotulo: str, fonte: dict) -> str:
+        return f'<div class="kpi-cabeca"><h3 class="kpi-rotulo" id="{id_}">{rotulo}</h3>{etiqueta_fonte(fonte)}</div>'
+
     if helpdesk:
         meus = helpdesk.get("meus_abertos")
+        novos = helpdesk.get("meus_novos_hoje")
         por_agente = helpdesk.get("por_agente") if isinstance(helpdesk.get("por_agente"), dict) else {}
         equipe = len(por_agente) > 1
         if equipe and MOSTRAR_RANKING:
             quebra = '<span class="sep" aria-hidden="true">•</span>'.join(
                 f"<span>{esc(n)} <b>{fmt_num((v or {}).get('abertos'))}</b></span>" for n, v in por_agente.items())
-            quebra_html = f'<p class="quebra" aria-label="Abertos por técnico">{quebra}</p>'
+            lado_largo = (f'<div class="kpi-quebra" aria-label="Abertos por técnico"><span class="titulo">Por técnico</span>'
+                          f'<p class="lista">{quebra}</p></div>')
         elif equipe:
-            quebra_html = f'<p class="quebra"><span>{len(por_agente)} agentes monitorados</span></p>'
+            lado_largo = f'<p class="kpi-rodape"><b>{len(por_agente)}</b> agentes monitorados</p>'
         else:
-            quebra_html = ""
+            lado_largo = ""
         card_largo = f"""
-<article class="card card-largo" style="--i:0" aria-labelledby="c-abertos">
-  <div class="card-topo">
-    <div class="card-medida">
-      <h3 class="card-titulo" id="c-abertos">{"Chamados<br>abertos - Suporte" if equipe else "Meus chamados<br>abertos"}</h3>
-      <p class="card-numero">{num_html(meus)}</p>
+<article class="card kpi kpi-primario" style="--i:0" aria-labelledby="c-abertos">
+  {cabeca_kpi("c-abertos", "Chamados abertos · suporte" if equipe else "Meus chamados abertos", fontes["helpdesk"])}
+  <div class="kpi-corpo">
+    <div class="kpi-linha">
+      <p class="kpi-numero">{num_html(meus)}</p>
+      <div class="kpi-juizo">{badge_delta(meus, anterior.get("meus_abertos"), melhor="menor")}</div>
+      <p class="kpi-secundario"><b>{num_html(novos)}</b> {"novo hoje" if novos == 1 else "novos hoje"}</p>
     </div>
-    <div class="card-medida secundaria">
-      <h3 class="card-titulo">Abertos<br>Hoje:</h3>
-      <p class="card-numero menor">{num_html(helpdesk.get("meus_novos_hoje"))}</p>
-    </div>
+    {lado_largo}
   </div>
-  <div class="badges">{badge_delta(meus, anterior.get("meus_abertos"), melhor="menor")}{badge_fonte(fontes["helpdesk"])}</div>
-  {quebra_html}
-</article>"""
-        card_atend = f"""
-<article class="card" style="--i:1" aria-labelledby="c-atend">
-  <div class="card-medida">
-    <h3 class="card-titulo" id="c-atend">Atendimentos<br>Fechados <small>(Ontem)</small></h3>
-    <p class="card-numero">{num_html(atend.get("total_atendimentos_fechados"))}</p>
-  </div>
-  <div class="badges">{badge_delta(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior")}{badge_fonte(fontes["helpdesk"])}</div>
-  <p class="card-rodape">Dia de Referência: {esc(atend.get("dia") or "—")}</p>
 </article>"""
         card_fila = f"""
-<article class="card" style="--i:2" aria-labelledby="c-fila">
-  <div class="card-medida">
-    <h3 class="card-titulo" id="c-fila">Fila de<br>Chamados</h3>
-    <p class="card-numero">{num_html(helpdesk.get("fila_total_abertos"))}</p>
-  </div>
-  <p class="card-sub">Chamados abertos no help desk</p>
-  <div class="badges">{badge_delta(helpdesk.get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor")}{badge_fonte(fontes["helpdesk"])}</div>
+<article class="card kpi" style="--i:1" aria-labelledby="c-fila">
+  {cabeca_kpi("c-fila", "Fila de chamados", fontes["helpdesk"])}
+  <p class="kpi-numero">{num_html(helpdesk.get("fila_total_abertos"))}</p>
+  <div class="kpi-juizo">{badge_delta(helpdesk.get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor")}</div>
+  <p class="kpi-rodape">chamados abertos no help desk</p>
+</article>"""
+        card_atend = f"""
+<article class="card kpi" style="--i:2" aria-labelledby="c-atend">
+  {cabeca_kpi("c-atend", "Atendimentos fechados", fontes["helpdesk"])}
+  <p class="kpi-numero">{num_html(atend.get("total_atendimentos_fechados"))}</p>
+  <div class="kpi-juizo">{badge_delta(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior")}</div>
+  <p class="kpi-rodape">último dia útil · <b>{esc(atend.get("dia") or "—")}</b></p>
 </article>"""
     else:
-        indisponivel = badge_fonte(fontes["helpdesk"])
         card_largo = f"""
-<article class="card card-largo" style="--i:0" aria-labelledby="c-abertos">
-  <div class="card-medida"><h3 class="card-titulo" id="c-abertos">Chamados<br>abertos - Suporte</h3><p class="card-numero">—</p></div>
-  <p class="card-sub">Sem dados do help desk nesta geração.</p><div class="badges">{indisponivel}</div>
-</article>"""
-        card_atend = f"""
-<article class="card" style="--i:1" aria-labelledby="c-atend">
-  <div class="card-medida"><h3 class="card-titulo" id="c-atend">Atendimentos<br>Fechados <small>(Ontem)</small></h3><p class="card-numero">—</p></div>
-  <div class="badges">{indisponivel}</div><p class="card-rodape">Dia de Referência: —</p>
+<article class="card kpi kpi-primario" style="--i:0" aria-labelledby="c-abertos">
+  {cabeca_kpi("c-abertos", "Chamados abertos · suporte", fontes["helpdesk"])}
+  <div class="kpi-linha"><p class="kpi-numero"><span class="sem-dado">—</span></p><p class="kpi-vazio">Sem dados do help desk nesta geração.</p></div>
 </article>"""
         card_fila = f"""
-<article class="card" style="--i:2" aria-labelledby="c-fila">
-  <div class="card-medida"><h3 class="card-titulo" id="c-fila">Fila de<br>Chamados</h3><p class="card-numero">—</p></div>
-  <p class="card-sub">Chamados abertos no help desk</p><div class="badges">{indisponivel}</div>
+<article class="card kpi" style="--i:1" aria-labelledby="c-fila">
+  {cabeca_kpi("c-fila", "Fila de chamados", fontes["helpdesk"])}
+  <p class="kpi-numero"><span class="sem-dado">—</span></p>
+  <p class="kpi-rodape">chamados abertos no help desk</p>
+</article>"""
+        card_atend = f"""
+<article class="card kpi" style="--i:2" aria-labelledby="c-atend">
+  {cabeca_kpi("c-atend", "Atendimentos fechados", fontes["helpdesk"])}
+  <p class="kpi-numero"><span class="sem-dado">—</span></p>
+  <p class="kpi-rodape">último dia útil · —</p>
 </article>"""
 
+    par_lic = ('<div class="kpi-par">'
+               '<div class="kpi-medida"><p class="kpi-numero">{vencidas}</p><p class="kpi-legenda">vencidas recentes</p></div>'
+               '<div class="kpi-medida"><p class="kpi-numero menor">{vencendo}</p><p class="kpi-legenda">vencendo em breve</p></div>'
+               '</div>')
     if licencas:
-        badge_venc = (f'<span class="badge"><b>{fmt_num(n_vencidas)}</b> Vencidas Recentemente</span>' if n_vencidas
-                      else '<span class="badge bom">Nenhuma vencida recente</span>')
-        rodape_lic = (f'<p class="card-rodape">{fmt_num(vencidas_antigas)} vencida(s) há mais tempo (fora da janela)</p>'
+        rodape_lic = (f'<p class="kpi-rodape"><b>{fmt_num(vencidas_antigas)}</b> vencidas há mais tempo (fora da janela)</p>'
                       if vencidas_antigas not in (None, "") else "")
         card_lic = f"""
-<article class="card" style="--i:3" aria-labelledby="c-lic">
-  <div class="card-medida">
-    <h3 class="card-titulo" id="c-lic">Licenças<br>em Risco</h3>
-    <div class="card-numero-bloco"><p class="card-numero">{num_html(n_vencendo)}</p><p class="card-sub">Vencendo</p></div>
-  </div>
-  <div class="badges">{badge_venc}{badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), "vencidas vs. dia anterior", melhor="menor")}{badge_fonte(fontes["licencas"])}</div>
+<article class="card kpi kpi-dupla" style="--i:3" aria-labelledby="c-lic">
+  {cabeca_kpi("c-lic", "Licenças", fontes["licencas"])}
+  {par_lic.format(vencidas=num_html(n_vencidas), vencendo=num_html(n_vencendo))}
+  <div class="kpi-juizo">{badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), melhor="menor")}</div>
   {rodape_lic}
 </article>"""
     else:
         card_lic = f"""
-<article class="card" style="--i:3" aria-labelledby="c-lic">
-  <div class="card-medida"><h3 class="card-titulo" id="c-lic">Licenças<br>em Risco</h3><div class="card-numero-bloco"><p class="card-numero">—</p><p class="card-sub">Vencendo</p></div></div>
-  <div class="badges">{badge_fonte(fontes["licencas"])}</div>
+<article class="card kpi kpi-dupla" style="--i:3" aria-labelledby="c-lic">
+  {cabeca_kpi("c-lic", "Licenças", fontes["licencas"])}
+  {par_lic.format(vencidas='<span class="sem-dado">—</span>', vencendo='<span class="sem-dado">—</span>')}
 </article>"""
 
     secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
   <div class="grade-destaques">
     {titulo_secao("Destaques do dia", "destaques", ["Destaques", "Do Dia"])}
-    {card_largo}{card_atend}{card_fila}{card_lic}
+    {card_largo}{card_fila}{card_atend}{card_lic}
   </div>
 </section>"""
 
