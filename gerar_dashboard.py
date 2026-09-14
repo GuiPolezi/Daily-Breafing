@@ -647,7 +647,7 @@ CSS = """
   /* ritmo: escala 1.25 a partir de 15px (12 / 15 / 19 / 24 / 30 / 37 / 47 / 58 / 73) */
   --t-meta:12.5px;--t-corpo:15px;
   --t-hero:clamp(38px,min(7.6vh,4.6vw),82px);--t-num:clamp(56px,min(10vh,5.2vw),112px);--t-num-2:clamp(30px,min(5.6vh,3vw),60px);
-  --t-rotulo:clamp(11.5px,1.6vh,14px);
+  --t-rotulo:clamp(11.5px,1.6vh,14px);--t-num-3:clamp(20px,min(3vh,1.6vw),30px);
   --t-card:clamp(17px,min(2.6vh,1.35vw),24px);
   --topo-h:clamp(180px,29vh,330px);
   --margem:clamp(14px,1.4vw,24px);--pad:clamp(18px,2.2vw,36px);--gap:clamp(14px,1.8vw,28px);--pad-card:clamp(18px,2vw,30px);
@@ -716,17 +716,16 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .secao.ativa{opacity:1;visibility:visible;transform:none;transition-delay:.06s,.06s,0s;z-index:1}
 .titulo-secao{font:400 var(--t-hero)/.95 var(--serif);color:var(--titulo);letter-spacing:-.01em;text-wrap:balance}
 .titulo-secao .l{display:block}
-.subtitulo{font:400 clamp(18px,2.4vh,26px)/1.2 var(--serif);color:rgba(246,227,197,.8);margin-top:6px}
+.subtitulo{font:400 clamp(18px,2.4vh,26px)/1.2 var(--serif);color:rgba(246,227,197,.8)}
+/* cabeçalho único de seção: título serif à esquerda, contexto (texto ou números) à direita, na mesma linha de base.
+   Números do lado ficam sobre o mel, por isso em oliva-escuro (5,2:1) e não em marfim (2,3:1). */
 .secao-cabeca{flex:0 0 auto}
-.secao-cabeca.centro{text-align:center}
-.secao-cabeca.dividida{display:grid;grid-template-columns:1fr auto;align-items:end;gap:var(--gap)}
-.secao-cabeca.dividida .titulo-secao{grid-column:2;grid-row:1}
-.secao-cabeca.dividida .lado{grid-column:1;grid-row:1}
-.cabeca-briefing{display:flex;justify-content:space-between;align-items:baseline;gap:var(--gap);flex-wrap:wrap}
+.secao-cabeca.dividida{display:flex;justify-content:space-between;align-items:flex-end;gap:12px var(--gap);flex-wrap:wrap}
+.secao-cabeca .lado{display:flex;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;gap:8px clamp(20px,2.6vw,44px);text-align:right;margin-left:auto;padding-bottom:.3em}
+.secao-cabeca.dividida .titulo-secao{line-height:1.05}  /* descendentes (ç, g) não podem ficar sob o conteúdo seguinte */
+.secao-cabeca .lado .kpi-numero{color:var(--oliva-escuro)}
+.secao-cabeca .lado .kpi-legenda{color:rgba(40,54,24,.62)}
 .carimbo-briefing{font:400 clamp(20px,3vh,30px)/1 var(--serif);color:var(--titulo);white-space:nowrap}
-.titulo-escuro{font:700 clamp(15px,1.9vh,18px)/1.3 var(--sans);color:var(--oliva-escuro)}
-.legenda-escura{font-size:14px;font-weight:600;color:rgba(40,54,24,.62)}
-.legenda-escura b{color:var(--oliva-escuro)}
 .nota-escura{flex:0 0 auto;font-size:13px;font-weight:600;color:rgba(40,54,24,.7)}
 .vazio{flex:1 1 auto;display:flex;align-items:center;justify-content:center;text-align:center;font:400 clamp(20px,3vh,28px)/1.3 var(--serif);color:rgba(246,227,197,.85);padding:var(--pad)}
 
@@ -734,7 +733,6 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .card{background:var(--oliva);color:var(--marfim);border-radius:var(--r-card);padding:var(--pad-card);display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0;position:relative;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
 .card:hover{transform:translateY(-3px);box-shadow:0 18px 36px -12px rgba(40,54,24,.5)}
 @keyframes entrar{from{opacity:0;transform:translateY(16px)}}
-.card-titulo{font:700 var(--t-card)/1.15 var(--sans);color:var(--verde);letter-spacing:-.01em}
 .badge{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;background:var(--marfim);color:var(--vermelho);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;line-height:1.4;white-space:nowrap}
 .badge b{font-size:14px;font-weight:700}
 .badge.bom{color:var(--bom)}
@@ -775,9 +773,8 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 
 /* Evolução */
 .graficos{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
-.card-grafico{gap:4px}
-.card-titulo-md{font:700 clamp(16px,2.2vh,20px)/1.2 var(--sans);color:var(--verde)}
-.card-legenda{font-size:13.5px;font-weight:600;color:var(--verde-texto);margin-bottom:8px}
+.card-grafico{gap:8px}
+.card-grafico .kpi-linha{gap:4px clamp(12px,1.4vw,24px)}
 .grafico-caixa{position:relative;flex:1 1 auto;min-height:120px;transition:height .5s var(--ease)}
 .grafico-caixa canvas{position:absolute;inset:0;width:100% !important;height:100% !important}
 .secao.aberto .graficos{flex:0 0 auto}
@@ -801,7 +798,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 
 /* Eficácia */
 .card-ranking{flex:1 1 auto;min-height:0;padding:clamp(20px,3vh,40px) clamp(20px,3vw,48px);overflow:auto;scrollbar-width:thin;scrollbar-color:rgba(254,250,224,.3) transparent}
-.card-ranking .ranking{min-height:max(100%,calc(var(--n) * 40px + 30px))}
+.card-ranking .ranking{min-height:calc(var(--n) * 40px + 30px)}
 .ranking{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:max-content minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;column-gap:clamp(14px,2vw,26px)}
 .nomes{grid-row:1;grid-column:1;display:flex;flex-direction:column;justify-content:space-evenly;text-align:right}
 .nomes span{height:clamp(24px,4.2vh,34px);line-height:clamp(24px,4.2vh,34px);font-weight:700;font-size:clamp(14px,2.2vh,18px);color:var(--marfim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:clamp(120px,14vw,240px)}
@@ -810,7 +807,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .linha{position:relative;display:flex;align-items:center;gap:10px;height:clamp(24px,4.2vh,34px)}
 .barra{display:block;height:100%;width:0;background:var(--verde);border-radius:999px;transition:width .9s var(--ease) calc(.2s + var(--i,0)*90ms)}
 .secao.ativa .barra{width:calc(var(--v) / var(--max) * 100%)}
-.valor{font-weight:700;color:var(--mel);font-size:clamp(13px,2vh,16px);opacity:0;transition:opacity .4s calc(.7s + var(--i,0)*90ms);font-variant-numeric:tabular-nums}
+.valor{font:italic 800 var(--t-num-3)/1 var(--sans);color:var(--marfim);letter-spacing:-.02em;opacity:0;transition:opacity .4s calc(.7s + var(--i,0)*90ms);font-variant-numeric:tabular-nums}
 .secao.ativa .valor{opacity:1}
 .eixo{grid-row:2;grid-column:2;position:relative;height:30px}
 .eixo span{position:absolute;left:calc(var(--p) * 100%);transform:translateX(-50%);top:8px;font-size:13px;font-weight:600;color:rgba(254,250,224,.6);font-variant-numeric:tabular-nums}
@@ -836,7 +833,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .slide{flex:0 0 100%;min-width:0;height:100%;display:flex}
 .card-slide{flex:1 1 auto;min-width:0;overflow:auto;gap:14px;padding:clamp(20px,3vh,36px) clamp(22px,3vw,44px);scrollbar-width:thin;scrollbar-color:rgba(254,250,224,.3) transparent}
 .card-slide:hover{transform:none;box-shadow:none}
-.card-slide h3{font:700 clamp(19px,2.8vh,24px)/1.2 var(--sans);color:var(--verde)}
+.card-slide .kpi-rotulo{font-size:clamp(13px,1.9vh,16px)}  /* card de leitura: rótulo não pode ser menor que o corpo */
 .slide-corpo{font-size:clamp(13.5px,1.8vh,15px);line-height:1.5;color:var(--marfim)}
 .slide-corpo.duas-colunas{columns:2;column-gap:40px}
 .slide-corpo li{position:relative;padding-left:18px;margin:0 0 10px;break-inside:avoid}
@@ -864,19 +861,12 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 
 /* Fontes */
 .grade-fontes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);align-content:start}
-.card-fonte{gap:10px;min-height:clamp(180px,30vh,320px)}
-.fonte-cabeca{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.estado{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;white-space:nowrap}
-.estado::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.estado.ok{background:var(--verde);color:var(--oliva-escuro)}
-.estado.desatualizada{background:var(--ambar-bg);color:var(--ambar-ink)}
-.estado.indisponivel{background:var(--verm-bg);color:var(--verm-ink)}
-.fonte-hora{font-size:14px;color:var(--verde-texto);font-weight:600}
-.fonte-hora b{color:var(--marfim);font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
-.fonte-detalhe{font-size:13px;color:rgba(254,250,224,.6)}
+.card-fonte{min-height:clamp(180px,30vh,320px)}
+.kpi-fonte.ok{background:var(--verde);color:var(--oliva-escuro)}
+.fonte-detalhe{font-size:clamp(13px,1.7vh,15px);font-weight:600;color:var(--verde-texto)}
 .mini-stats{display:flex;gap:22px;margin-top:auto;padding-top:12px;border-top:1px solid rgba(254,250,224,.14);flex-wrap:wrap}
 .mini-stats li{display:flex;flex-direction:column}
-.mini-stats b{font:800 clamp(22px,3vh,30px)/1 var(--sans);color:var(--marfim);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mini-stats b{font:italic 800 var(--t-num-3)/1 var(--sans);color:var(--marfim);letter-spacing:-.03em;font-variant-numeric:tabular-nums;padding-right:.06em}
 .mini-stats span{font-size:12px;color:var(--verde-texto);font-weight:600;margin-top:4px}
 
 /* entrada escalonada dos cards (só no modo palco) */
@@ -915,9 +905,9 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
   .kpi-quebra .lista{justify-content:flex-start}
   .graficos{grid-template-columns:1fr}
   .grafico-caixa{height:240px !important}
-  .secao-cabeca.dividida{grid-template-columns:1fr}
-  .secao-cabeca.dividida .titulo-secao{grid-column:1;grid-row:1}
-  .secao-cabeca.dividida .lado{grid-column:1;grid-row:2}
+  .secao-cabeca.dividida{flex-direction:column;align-items:flex-start}
+  .secao-cabeca .lado{width:100%;margin-left:0;justify-content:flex-start;text-align:left;padding-bottom:0}
+  .carimbo-briefing{white-space:normal;font-size:22px}
   .card-ranking{min-height:320px}
   .nomes span{max-width:110px}
   .tabela-clara{max-height:70vh}
@@ -1077,13 +1067,11 @@ JS_UI = """
   if (mqPalco.addEventListener) mqPalco.addEventListener("change", aplicarModo);
   else if (mqPalco.addListener) mqPalco.addListener(aplicarModo);
 
-  // contagem animada dos números-destaque (uma vez, quando a seção aparece)
-  var contou = false;
-  function contar(){
-    if (contou) return;
-    contou = true;
+  // contagem animada dos números (uma vez por elemento, quando a seção dele aparece)
+  function contar(raiz){
     var fmt = function(n){ return n.toLocaleString("pt-BR"); };
-    Array.prototype.forEach.call(doc.querySelectorAll("[data-n]"), function(el){
+    Array.prototype.forEach.call((raiz || doc).querySelectorAll("[data-n]:not([data-contado])"), function(el){
+      el.setAttribute("data-contado", "1");
       var n = Number(el.getAttribute("data-n"));
       if (!isFinite(n) || rm || !win.requestAnimationFrame || n === 0) return;
       var t0 = null, dur = 900;
@@ -1097,7 +1085,7 @@ JS_UI = """
       win.requestAnimationFrame(tick);
     });
   }
-  doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id === "destaques") contar(); });
+  doc.addEventListener("secao:ativa", function(e){ var s = e.detail && doc.getElementById(e.detail.id); if (s) contar(s); });
 
   // slider do briefing
   (function(){
@@ -1208,6 +1196,9 @@ JS_UI = """
   atual = h >= 0 ? h : 0;
   secoes.forEach(function(s, i){ s.classList.toggle("antes", i < atual); s.classList.toggle("depois", i > atual); });
   var ligar = function(){
+    // com #hash na URL o navegador rola o container até a âncora antes do JS assumir; devolve ao topo
+    var colmeia = doc.getElementById("colmeia");
+    if (colmeia) colmeia.scrollTop = 0;
     aplicarModo();
     marcarMenu(ids[atual]);
     emitir("secao:ativa", { id: ids[atual], indice: atual });
@@ -1215,6 +1206,7 @@ JS_UI = """
   };
   if (win.requestAnimationFrame && !rm) win.requestAnimationFrame(function(){ win.requestAnimationFrame(ligar); });
   else ligar();
+  win.addEventListener("load", function(){ var c = doc.getElementById("colmeia"); if (c) c.scrollTop = 0; });
 })();
 """
 
@@ -1389,6 +1381,9 @@ JS_CHARTS = """
     if (atend) area(atend, "Atendimentos fechados", D.atend, rubro, rubroArea, .85, .05);
   }
   doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id === "evolucao") montar(); });
+  // carga direta com #evolucao: o evento inicial pode ter sido emitido antes deste ouvinte existir
+  var jaAtiva = doc.querySelector(".secao.ativa");
+  if ((jaAtiva && jaAtiva.id === "evolucao") || (location.hash || "").slice(1) === "evolucao") montar();
   if (win.matchMedia) {  // janela redimensionada para o modo empilhado antes de visitar Evolução
     var mq = win.matchMedia("(min-width: 900px)");
     var aoMudar = function(){ if (!mq.matches) montar(); };
@@ -1466,8 +1461,8 @@ def titulo_secao(texto: str, id_: str, linhas: list[str] | None = None) -> str:
     return f'<h2 class="titulo-secao" id="t-{id_}">{interno}</h2>'
 
 
-def secao_vazia(id_: str, titulo: str, mensagem: str, centro: bool = True) -> str:
-    cab = f'<header class="secao-cabeca{" centro" if centro else ""}">{titulo_secao(titulo, id_)}</header>'
+def secao_vazia(id_: str, titulo: str, mensagem: str) -> str:
+    cab = f'<header class="secao-cabeca dividida">{titulo_secao(titulo, id_)}</header>'
     return (f'<section class="secao" id="{id_}" data-scroll aria-labelledby="t-{id_}">{cab}'
             f'<p class="vazio">{mensagem}</p></section>')
 
@@ -1634,6 +1629,12 @@ def gerar_html() -> str:
     if not n_dias:
         secao_evolucao = secao_vazia("evolucao", "Evolução", "Histórico indisponível (historico/metricas.jsonl vazio ou ausente).")
     else:
+        def ultimos(vals: list) -> tuple:
+            v = [x for x in vals if x is not None]
+            return (v[-1] if v else None, v[-2] if len(v) > 1 else None)
+        fila_ult, fila_ant = ultimos(serie["fila"])
+        atend_ult, atend_ant = ultimos(serie["atend"])
+        data_ult = label_dia(serie["datas"][-1]) if serie["datas"] else "—"
         if chart_js is None:
             graficos = ('<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
                         'Os dados seguem na tabela abaixo.</p>')
@@ -1641,13 +1642,13 @@ def gerar_html() -> str:
             graficos = f"""
 <div class="graficos">
   <article class="card card-grafico" style="--i:0">
-    <h3 class="card-titulo-md">Fila de Chamados Abertos</h3>
-    <p class="card-legenda">Últimos {n_dias} dia(s) registrado(s)</p>
+    <div class="kpi-cabeca"><h3 class="kpi-rotulo">Fila de chamados abertos</h3></div>
+    <div class="kpi-linha"><p class="kpi-numero menor">{num_html(fila_ult)}</p><div class="kpi-juizo">{badge_delta(fila_ult, fila_ant, "vs. registro anterior", melhor="menor")}</div><p class="kpi-legenda">último registro · {esc(data_ult)}</p></div>
     <div class="grafico-caixa"><canvas id="chartFila" role="img" aria-label="Evolução da fila de chamados abertos"></canvas></div>
   </article>
   <article class="card card-grafico" style="--i:1">
-    <h3 class="card-titulo-md">Atendimentos fechados por dia</h3>
-    <p class="card-legenda">Referente ao último dia útil de cada registro</p>
+    <div class="kpi-cabeca"><h3 class="kpi-rotulo">Atendimentos fechados por dia</h3></div>
+    <div class="kpi-linha"><p class="kpi-numero menor">{num_html(atend_ult)}</p><div class="kpi-juizo">{badge_delta(atend_ult, atend_ant, "vs. registro anterior", melhor="maior")}</div><p class="kpi-legenda">último dia útil registrado</p></div>
     <div class="grafico-caixa"><canvas id="chartAtend" role="img" aria-label="Evolução de atendimentos fechados por dia"></canvas></div>
   </article>
 </div>"""
@@ -1657,7 +1658,7 @@ def gerar_html() -> str:
         )
         secao_evolucao = f"""
 <section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
-  <header class="secao-cabeca centro">{titulo_secao("Evolução", "evolucao")}<p class="subtitulo">últimos {DIAS_GRAFICO} dias</p></header>
+  <header class="secao-cabeca dividida">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
   {graficos}
   <div class="serie">
   <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="serie-dados"><span class="pilula-texto">Ver dados da série</span>{CHEVRON_SVG}</button></div>
@@ -1685,12 +1686,12 @@ def gerar_html() -> str:
 <section class="secao" id="eficacia" data-scroll aria-labelledby="t-eficacia">
   <header class="secao-cabeca dividida">
     {titulo_secao("Eficácia", "eficacia")}
-    <div class="lado">
-      <h3 class="titulo-escuro">{esc(titulo_rank)}</h3>
-      <p class="legenda-escura" title="{esc(dias_txt)}">Soma dos últimos {len(rank["dias"])} dia(s) útil(eis) registrado(s). <b>Total {fmt_num(rank["total_periodo"])}</b>{esc(nota_rank)}</p>
-    </div>
+    <div class="lado"><div class="kpi-medida" title="{esc(dias_txt)}"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p><p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
   </header>
-  <article class="card card-ranking" style="--i:0" data-scroll>{render_ranking(nomes_rank, valores_rank)}</article>
+  <article class="card card-ranking" style="--i:0" data-scroll>
+    <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3><p class="kpi-legenda">soma dos últimos {len(rank["dias"])} dia(s) útil(eis) registrado(s){esc(nota_rank)}</p></div>
+    {render_ranking(nomes_rank, valores_rank)}
+  </article>
 </section>"""
 
     # ================================================================ 4. LICENÇAS
@@ -1718,23 +1719,24 @@ def gerar_html() -> str:
                 f'<td>{esc(it["cliente"])}</td><td>{esc(it["sistema"])}</td>'
                 f'<td class="num">{esc(it["vencimento"])}</td><td class="num{urgente}">{prazo}</td></tr>'
             )
-        nota = ""
-        if vencidas_antigas not in (None, ""):
-            nota = f'<p class="nota-escura">Além destas, {fmt_num(vencidas_antigas)} licença(s) vencida(s) há mais tempo não são listadas aqui.</p>'
+        sintese = ('<div class="lado">'
+                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(n_vencidas)}</p><p class="kpi-legenda">vencidas recentes</p></div>'
+                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(n_vencendo)}</p><p class="kpi-legenda">vencendo em breve</p></div>'
+                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(vencidas_antigas)}</p><p class="kpi-legenda">vencidas há mais tempo, fora da lista</p></div>'
+                   '</div>')
         secao_licencas = f"""
 <section class="secao" id="licencas" aria-labelledby="t-licencas">
-  <header class="secao-cabeca centro">{titulo_secao("Licenças", "licencas")}</header>
+  <header class="secao-cabeca dividida">{titulo_secao("Licenças", "licencas")}{sintese}</header>
   <div class="tabela-clara" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
     <table class="tabela-lic"><caption class="sr-only">Licenças vencidas recentemente e vencendo em breve, por urgência</caption>
       <thead><tr><th scope="col">Status</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
       <tbody>{''.join(linhas)}</tbody></table>
   </div>
-  {nota}
 </section>"""
 
     # ================================================================ 5. BRIEFING
     if relatorio is None:
-        secao_briefing = secao_vazia("briefing", "Briefing do Dia", "Briefing indisponível (relatorio.md ausente ou vazio).", centro=False)
+        secao_briefing = secao_vazia("briefing", "Briefing do Dia", "Briefing indisponível (relatorio.md ausente ou vazio).")
     else:
         texto = relatorio if MOSTRAR_RANKING else redigir_nomes(relatorio, nomes_tecnicos)
         titulo_h1, slides = dividir_briefing(texto)
@@ -1749,12 +1751,12 @@ def gerar_html() -> str:
             corpo = markdown_para_html(corpo_md, base=4) or "<p>—</p>"
             itens_slides.append(
                 f'<li class="slide" role="group" aria-roledescription="slide" aria-label="{i + 1} de {len(slides)}: {esc(s["titulo"])}">'
-                f'<article class="card card-slide" data-scroll><h3>{esc(s["titulo"])}</h3><div class="slide-corpo{duas}">{corpo}</div></article></li>'
+                f'<article class="card card-slide" data-scroll><h3 class="kpi-rotulo">{esc(s["titulo"])}</h3><div class="slide-corpo{duas}">{corpo}</div></article></li>'
             )
             pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
         secao_briefing = f"""
 <section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca cabeca-briefing">{titulo_secao("Briefing do Dia", "briefing")}<p class="carimbo-briefing">{esc(data_brief)}</p></header>
+  <header class="secao-cabeca dividida">{titulo_secao("Briefing do Dia", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
   <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos do briefing">
     <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
     <div class="slider-controles">
@@ -1767,6 +1769,7 @@ def gerar_html() -> str:
 
     # ================================================================ 6. FONTES
     rotulo_estado = {"ok": "Atualizada", "desatualizada": "Desatualizada", "indisponivel": "Indisponível"}
+    classe_estado = {"ok": "ok", "desatualizada": "aviso", "indisponivel": "grave"}
     cards_fontes = []
     for i, (chave, f) in enumerate(fontes.items()):
         estado = f["estado"]
@@ -1787,16 +1790,20 @@ def gerar_html() -> str:
                      f'<li><b>{fmt_num(d.get("ignoradas_homolog_teste"))}</b><span>homolog./teste ignoradas</span></li></ul>')
         detalhe = {"ok": "dentro do limite de 24 h", "desatualizada": f"coleta {esc(f['detalhe'])} · limite de 24 h",
                    "indisponivel": esc(f["detalhe"])}[estado]
+        dt = f["coletado_em"]
+        hora = esc(dt.strftime("%H:%M")) if dt else '<span class="sem-dado">—</span>'
+        data_coleta = esc(dt.strftime("%d/%m/%Y")) if dt else "—"
         cards_fontes.append(f"""
-<article class="card card-fonte" style="--i:{i}" aria-labelledby="f-{chave}">
-  <div class="fonte-cabeca"><h3 class="card-titulo" id="f-{chave}">{esc(f["rotulo"])}</h3><span class="estado {estado}">{rotulo_estado[estado]}</span></div>
-  <p class="fonte-hora"><span>Coletado em</span><b>{esc(fmt_dt(f["coletado_em"]))}</b></p>
+<article class="card card-fonte kpi" style="--i:{i}" aria-labelledby="f-{chave}">
+  <div class="kpi-cabeca"><h3 class="kpi-rotulo" id="f-{chave}">{esc(f["rotulo"])}</h3><span class="kpi-fonte {classe_estado[estado]}">{rotulo_estado[estado]}</span></div>
+  <p class="kpi-numero menor">{hora}</p>
+  <p class="kpi-legenda">coletado em {data_coleta}</p>
   <p class="fonte-detalhe">{detalhe}</p>
   {stats}
 </article>""")
     secao_fontes = f"""
 <section class="secao" id="fontes" data-scroll aria-labelledby="t-fontes">
-  <header class="secao-cabeca centro">{titulo_secao("Fontes", "fontes")}<p class="subtitulo">status da coleta de hoje</p></header>
+  <header class="secao-cabeca dividida">{titulo_secao("Fontes", "fontes")}<p class="lado subtitulo">{sum(1 for f in fontes.values() if f["estado"] == "ok")} de {len(fontes)} fontes atualizadas · coleta de hoje</p></header>
   <div class="grade-fontes">{''.join(cards_fontes)}</div>
   <p class="nota-escura">Arquivo estático gerado por gerar_dashboard.py · sem dependências externas · pode ser copiado sozinho.</p>
 </section>"""
