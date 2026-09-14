@@ -32,10 +32,12 @@ HISTORICO = RAIZ / "historico" / "metricas.jsonl"
 RELATORIO = RAIZ / "relatorio.md"
 ASSETS = RAIZ / "assets"
 CHART_JS = ASSETS / "chart.min.js"
+GSAP_JS = ASSETS / "gsap.min.js"
 SAIDA = RAIZ / "dashboard.html"
 
 # Baixado UMA vez para assets/; depois disso o dashboard não depende de rede.
 CHART_JS_URL = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+GSAP_JS_URL = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.15.0/gsap.min.js"
 LIMITE_DESATUALIZADA = timedelta(hours=24)
 
 # (chave, rótulo, arquivo)
@@ -118,26 +120,36 @@ def ler_relatorio() -> str | None:
     return texto if texto.strip() else None
 
 
-def carregar_chart_js() -> str | None:
-    """Conteúdo do Chart.js para embutir. Baixa uma única vez se faltar."""
-    if not CHART_JS.exists():
+def carregar_js_embutido(caminho: Path, url: str, nome: str, sem: str) -> str | None:
+    """Conteúdo de uma biblioteca JS para embutir. Baixa uma única vez se faltar."""
+    if not caminho.exists():
         try:
             ASSETS.mkdir(exist_ok=True)
-            with urllib.request.urlopen(CHART_JS_URL, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout=10) as resp:
                 conteudo = resp.read().decode("utf-8")
-            CHART_JS.write_text(conteudo, encoding="utf-8")
-            print(f"Chart.js baixado para {CHART_JS}")
-        except Exception as e:  # sem rede: segue sem gráficos
-            print(f"AVISO: Chart.js indisponivel ({type(e).__name__}); dashboard sem graficos")
+            caminho.write_text(conteudo, encoding="utf-8")
+            print(f"{nome} baixado para {caminho}")
+        except Exception as e:  # sem rede: segue sem a biblioteca
+            print(f"AVISO: {nome} indisponivel ({type(e).__name__}); dashboard {sem}")
             return None
     try:
-        js = CHART_JS.read_text(encoding="utf-8")
+        js = caminho.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
     if not js.strip():
         return None
     # Segurança ao embutir em <script>: nunca fechar a tag por acidente.
     return js.replace("</script", "<\\/script")
+
+
+def carregar_chart_js() -> str | None:
+    """Chart.js para os gráficos."""
+    return carregar_js_embutido(CHART_JS, CHART_JS_URL, "Chart.js", "sem graficos")
+
+
+def carregar_gsap() -> str | None:
+    """GSAP para as animações do cabeçalho."""
+    return carregar_js_embutido(GSAP_JS, GSAP_JS_URL, "GSAP", "sem animacoes")
 
 
 # ----------------------------------------------------------------------------
@@ -503,26 +515,33 @@ ABELHA_SVG = """<svg class="abelha" viewBox="0 0 100 104" aria-hidden="true" foc
 <defs>
 <linearGradient id="mel-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbc93a"/><stop offset=".55" stop-color="#f5a11f"/><stop offset="1" stop-color="#ef6f1a"/></linearGradient>
 </defs>
+<g class="abelha-voo">
 <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-<g stroke="#f9c04a" stroke-opacity=".5">
-<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke-width="8.5"/>
-<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke-width="8.5"/>
-<ellipse cx="50" cy="66" rx="12.5" ry="25" stroke-width="8.5"/>
+<ellipse cx="50" cy="66" rx="12.5" ry="25" stroke="#f9c04a" stroke-opacity=".5" stroke-width="8.5"/>
+<g class="asa asa-e">
+<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke="#f9c04a" stroke-opacity=".5" stroke-width="8.5"/>
+<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke="url(#mel-g)" stroke-width="5"/>
+<path d="M12 39c4-5 12-8 20-7" stroke="#fff1b8" stroke-opacity=".65" stroke-width="1.4"/>
+</g>
+<g class="asa asa-d">
+<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke="#f9c04a" stroke-opacity=".5" stroke-width="8.5"/>
+<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke="url(#mel-g)" stroke-width="5"/>
+<path d="M88 39c-4-5-12-8-20-7" stroke="#fff1b8" stroke-opacity=".65" stroke-width="1.4"/>
 </g>
 <g stroke="url(#mel-g)">
 <path d="M44 22c-3-6-8-9-14-11" stroke-width="3.4"/>
 <path d="M56 22c3-6 8-9 14-11" stroke-width="3.4"/>
-<ellipse cx="27" cy="43" rx="21.5" ry="11.5" transform="rotate(-14 27 43)" stroke-width="5"/>
-<ellipse cx="73" cy="43" rx="21.5" ry="11.5" transform="rotate(14 73 43)" stroke-width="5"/>
 <ellipse cx="50" cy="66" rx="12.5" ry="25" stroke-width="5.6"/>
 <path d="M41 37q9-7 18 0" stroke-width="3.6"/>
 </g>
-<g stroke="#fff1b8" stroke-opacity=".65" stroke-width="1.4">
-<path d="M40 60c-1 8 2 18 9 24"/><path d="M12 39c4-5 12-8 20-7"/><path d="M88 39c-4-5-12-8-20-7"/>
-</g>
+<path d="M40 60c-1 8 2 18 9 24" stroke="#fff1b8" stroke-opacity=".65" stroke-width="1.4"/>
 </g>
 <g fill="url(#mel-g)"><circle cx="29.5" cy="10" r="3.4"/><circle cx="70.5" cy="10" r="3.4"/><ellipse cx="50" cy="27" rx="8.6" ry="7.6"/></g>
+</g>
 </svg>"""
+
+TRACO_SVG = ('<svg class="traco" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+             '<rect width="1" height="1" shape-rendering="crispEdges"/></svg>')
 
 CHEVRON_SVG = ('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" '
                'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>')
@@ -569,7 +588,9 @@ a{color:inherit}
 .abelha{height:clamp(72px,14vh,150px);width:auto;flex:0 0 auto;filter:drop-shadow(0 6px 10px rgba(222,150,40,.25))}
 .wordmark{font:800 clamp(26px,min(4.4vh,2.4vw),42px)/1.05 var(--sans);letter-spacing:-.02em;color:#000}
 .wordmark .w{display:block;position:relative;width:max-content}
-.wordmark .w::after{content:"";position:absolute;left:0;top:53%;height:.075em;width:var(--traco-w,100%);background:var(--traco);border-radius:2px;pointer-events:none}
+.wordmark .traco{position:absolute;left:0;top:53%;height:3px;width:var(--traco-w,100%);display:block;overflow:visible;fill:var(--traco);pointer-events:none}
+/* entrada animada (GSAP): html.anim esconde até o script assumir; sem JS ou sem GSAP a classe não existe */
+.anim .abelha,.anim .wordmark .w{opacity:0}
 .carimbo{flex:0 0 auto;margin:0 0 8px calc(var(--pad) - 2px);font-size:var(--t-meta);font-weight:700;color:var(--carimbo);letter-spacing:.01em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .carimbo .sep{opacity:.55}
 .carimbo .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:2px 10px;border-radius:999px;text-decoration:none}
@@ -765,6 +786,7 @@ a{color:inherit}
   .topo{position:sticky;top:0;z-index:20;height:auto;flex-wrap:wrap;background:var(--creme);padding:12px 4px;gap:10px 16px}
   .abelha{height:52px}
   .wordmark{font-size:22px}
+  .wordmark .traco{height:2px}
   .favo{height:auto;flex:1 0 100%;justify-content:flex-start}
   .favo-svg{display:none !important}
   .menu-simples{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;width:100%}
@@ -807,6 +829,7 @@ a{color:inherit}
   body{overflow:visible;background:#fff}
   .palco{display:block;height:auto}
   .topo{height:auto}
+  .abelha,.wordmark .w,.wordmark .traco{opacity:1 !important;transform:none !important}
   .favo,.slider-controles,.acoes{display:none}
   .colmeia{overflow:visible;background:none}
   .secao{position:static;opacity:1;visibility:visible;transform:none;overflow:visible;break-inside:avoid;background:var(--mel);border-radius:24px;margin-bottom:12px}
@@ -1084,6 +1107,66 @@ JS_UI = """
 })();
 """
 
+# --- JS: entrada do cabeçalho (abelha + letreiro), parallax do mouse — requer GSAP ---
+JS_HEADER = """
+(function(){
+  "use strict";
+  var doc = document, win = window, raiz = doc.documentElement;
+  var soltar = function(){ raiz.classList.remove("anim"); };
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var g = win.gsap;
+  if (!g || rm) { soltar(); return; }
+  try {
+    var abelha = doc.querySelector(".abelha"), voo = doc.querySelector(".abelha-voo");
+    var asaE = doc.querySelector(".abelha .asa-e"), asaD = doc.querySelector(".abelha .asa-d");
+    var wordmark = doc.querySelector(".wordmark"), marca = doc.querySelector(".marca");
+    var palavras = doc.querySelectorAll(".wordmark .w"), tracos = doc.querySelectorAll(".wordmark .traco");
+    if (!abelha || !voo || !wordmark || !palavras.length) { soltar(); return; }
+    // o CSS volta ao estado final agora; os "from" abaixo aplicam o estado inicial no mesmo quadro (sem piscar)
+    soltar();
+
+    // asas: batida curta em torno da junção com o corpo (na chegada e ao passar o mouse na marca)
+    var batendo = null;
+    function bater(vezes){
+      if (!asaE || !asaD || (batendo && batendo.isActive())) return;
+      batendo = g.timeline();
+      batendo.to(asaE, { rotation: -9, svgOrigin: "48 38", duration: .07, yoyo: true, repeat: vezes * 2 - 1, ease: "sine.inOut" }, 0)
+             .to(asaD, { rotation: 9, svgOrigin: "52 38", duration: .07, yoyo: true, repeat: vezes * 2 - 1, ease: "sine.inOut" }, 0)
+             .set([asaE, asaD], { rotation: 0 });
+    }
+
+    var tl = g.timeline({ defaults: { ease: "expo.out" } });
+    // abelha: chega da esquerda em arco, assenta e bate as asas
+    tl.from(voo, { x: -140, y: 60, rotation: -22, scale: .85, opacity: 0, duration: 1.15, ease: "power3.out", svgOrigin: "50 52" }, 0)
+      .add(function(){ bater(5); }, .4)
+      // letreiro: cada palavra sobe e assenta; o tachado desenha da esquerda para a direita
+      .from(palavras, { yPercent: 55, opacity: 0, letterSpacing: ".08em", duration: .9, stagger: .14 }, .45)
+      .from(tracos, { scaleX: 0, transformOrigin: "0 50%", duration: .55, stagger: .14, ease: "power2.inOut" }, .95)
+      // repouso: flutuação lenta e contínua
+      .add(function(){ g.to(voo, { y: "+=4", duration: 2.6, yoyo: true, repeat: -1, ease: "sine.inOut" }); });
+
+    var fino = !!(win.matchMedia && win.matchMedia("(hover: hover) and (pointer: fine)").matches);
+    if (marca && fino) marca.addEventListener("pointerenter", function(){ bater(4); });
+
+    // parallax do mouse: só em modo palco e com ponteiro fino; touch e telas estreitas ficam parados
+    if (fino) {
+      var mq = win.matchMedia("(min-width: 900px)");
+      var opc = { duration: .7, ease: "power3.out" };
+      var ax = g.quickTo(abelha, "x", opc), ay = g.quickTo(abelha, "y", opc);
+      var wx = g.quickTo(wordmark, "x", opc), wy = g.quickTo(wordmark, "y", opc);
+      var mover = function(nx, ny){ ax(nx * 9); ay(ny * 7); wx(nx * 4); wy(ny * 3); };
+      win.addEventListener("pointermove", function(e){
+        if (!mq.matches || e.pointerType === "touch") return;
+        mover((e.clientX / win.innerWidth) * 2 - 1, (e.clientY / win.innerHeight) * 2 - 1);
+      }, { passive: true });
+      raiz.addEventListener("mouseleave", function(){ mover(0, 0); });
+      var aoMudar = function(){ if (!mq.matches) mover(0, 0); };
+      if (mq.addEventListener) mq.addEventListener("change", aoMudar); else if (mq.addListener) mq.addListener(aoMudar);
+    }
+  } catch (e) { soltar(); }
+})();
+"""
+
 # Gráficos (Chart.js embutido). __DATA__ é substituído pelo JSON inline. Os
 # gráficos são criados quando a seção Evolução aparece (para animar à vista).
 JS_CHARTS = """
@@ -1251,6 +1334,7 @@ def gerar_html() -> str:
     historico = ler_historico()
     relatorio = ler_relatorio()
     chart_js = carregar_chart_js()
+    gsap_js = carregar_gsap()
     fontes_css = carregar_fontes_css()
 
     fontes: dict[str, dict] = {}
@@ -1565,6 +1649,13 @@ def gerar_html() -> str:
 
     payload = {"labels": serie["labels"], "fila": serie["fila"], "atend": serie["atend"]}
     script = f"<script>{JS_UI}</script>"
+    if gsap_js is not None:
+        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER}</script>"
+    # marca html.anim antes da primeira pintura (só quando há GSAP e sem movimento reduzido)
+    marcador_anim = (
+        '<script>(function(){try{if(!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches))'
+        'document.documentElement.classList.add("anim")}catch(e){}})();</script>'
+    ) if gsap_js is not None else ""
     if chart_js is not None and n_dias:
         script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload))}</script>"
 
@@ -1575,6 +1666,7 @@ def gerar_html() -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Briefing Diário — {esc(data_dados)}</title>
 <style>{fontes_css}{CSS}</style>
+{marcador_anim}
 </head>
 <body>
 <a class="pular" href="#destaques">Ir para o conteúdo</a>
@@ -1582,7 +1674,7 @@ def gerar_html() -> str:
 <header class="topo">
   <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Briefing Diário — início">
     {ABELHA_SVG}
-    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing</span><span class="w">Diário</span></h1>
+    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing{TRACO_SVG}</span><span class="w">Diário{TRACO_SVG}</span></h1>
   </a>
   <nav class="favo" aria-label="Seções do briefing">
     {favo_cheio}

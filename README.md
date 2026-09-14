@@ -80,6 +80,9 @@ Ao final do `briefing.bat`, além do `relatorio.md`, são executados:
    - O Chart.js é lido de `assets/chart.min.js`; se o arquivo faltar, é baixado
      uma única vez. Sem rede e sem o arquivo, o dashboard sai sem gráficos
      (as tabelas continuam).
+   - O GSAP (entrada animada da abelha e do letreiro, parallax do mouse) é lido
+     de `assets/gsap.min.js`, baixado uma única vez da mesma forma. Sem ele o
+     cabeçalho aparece parado e nada mais muda. Respeita `prefers-reduced-motion`.
    - Se um JSON de `dados/` faltar ou estiver corrompido, a seção correspondente
      mostra "fonte indisponível" e o restante é gerado normalmente.
    - `dashboard.html` contém dados internos e está no `.gitignore`.
