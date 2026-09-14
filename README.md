@@ -110,6 +110,32 @@ DASHBOARD_DIAS_GRAFICO=30        # dias do histórico exibidos nos gráficos
 
 Para gerar o dashboard manualmente: `python gerar_dashboard.py`.
 
+## Briefing e dashboard semanal (Windows)
+
+`briefing_semanal.bat` não roda coletores: o Claude lê só `historico/metricas.jsonl`
+e escreve `relatorio_semanal.md`. Em seguida:
+
+1. `gerar_dashboard_semanal.py` gera `dashboard_semanal.html`, com o mesmo visual,
+   a mesma navegação e o mesmo comportamento offline do dashboard diário (importa
+   CSS, JS e o favo de `gerar_dashboard.py`). Seções: Destaques da semana,
+   Relatório (tópicos do `relatorio_semanal.md` em slider), Evolução (gráficos dos
+   últimos 12 dias), Eficácia (ranking da semana), Semanas (atual contra a
+   anterior) e Dia a dia (tabela dos registros).
+   - Os números são calculados do histórico com as mesmas regras do prompt:
+     últimos 12 dias corridos; semana atual = 5 registros mais recentes; linhas
+     com o mesmo `atend_dia_ref` contam uma vez só; comparação com a semana
+     anterior só com pelo menos 3 dias registrados nela.
+   - Se o `relatorio_semanal.md` for mais antigo que o último registro do
+     histórico (por exemplo, o `claude -p` falhou), o topo mostra "relatório
+     desatualizado". Sem histórico ou sem relatório, a seção correspondente avisa
+     e o restante é gerado.
+   - `DASHBOARD_MOSTRAR_RANKING=false` também esconde os nomes aqui, inclusive no
+     texto do relatório.
+   - `dashboard_semanal.html` contém dados internos e está no `.gitignore`.
+2. `start "" dashboard_semanal.html` abre a página no navegador padrão.
+
+Para gerar manualmente: `python gerar_dashboard_semanal.py`.
+
 ## Sobre cada fonte
 
 | Fonte      | Dificuldade | Caminho                                                        |

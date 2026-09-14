@@ -9,6 +9,9 @@ cada seção degrada para "fonte indisponível" e o restante é gerado.
 Configuração (.env):
   DASHBOARD_MOSTRAR_RANKING=true|false  (default true)
   DASHBOARD_DIAS_GRAFICO=30             (default 30)
+
+gerar_dashboard_semanal.py importa CSS, JS, favo e helpers deste módulo: ao
+renomear ou mudar a assinatura de algo importado lá, atualize os dois.
 """
 
 from __future__ import annotations
@@ -219,12 +222,59 @@ def inline_md(texto: str) -> str:
     return t
 
 
+def celulas_md(linha: str) -> list[str]:
+    """Células de uma linha de tabela markdown ('| a | b |'); '\\|' é barra literal."""
+    miolo = linha.strip()
+    if miolo.startswith("|"):
+        miolo = miolo[1:]
+    if miolo.endswith("|") and not miolo.endswith("\\|"):
+        miolo = miolo[:-1]
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", miolo)]
+
+
+def tabela_md_para_html(linhas: list[str]) -> str:
+    """Tabela markdown (GFM): cabeçalho quando a 2ª linha é separadora (---, :--, --:, :-:)."""
+    def separadora(cels: list[str]) -> bool:
+        return bool(cels) and all(re.fullmatch(r":?-+:?", c) for c in cels)
+
+    grade = [celulas_md(l) for l in linhas]
+    cabeca: list[str] | None = None
+    alinhamentos: list[str] = []
+    if len(grade) >= 2 and separadora(grade[1]):
+        cabeca = grade[0]
+        alinhamentos = ["al-c" if c.startswith(":") and c.endswith(":") else "al-d" if c.endswith(":") else ""
+                        for c in grade[1]]
+        grade = grade[2:]
+    corpo = [cels for cels in grade if not separadora(cels)]
+    if cabeca is None and not corpo:
+        return ""
+    colunas = max(len(cels) for cels in ([cabeca] if cabeca else []) + corpo)
+
+    def classe(i: int) -> str:
+        a = alinhamentos[i] if i < len(alinhamentos) else ""
+        return f' class="{a}"' if a else ""
+
+    def completar(cels: list[str]) -> list[str]:
+        return cels + [""] * (colunas - len(cels))
+
+    partes = ['<div class="tabela-md"><table>']
+    if cabeca:
+        partes.append("<thead><tr>" + "".join(
+            f'<th scope="col"{classe(i)}>{inline_md(c)}</th>' for i, c in enumerate(completar(cabeca))) + "</tr></thead>")
+    partes.append("<tbody>" + "".join(
+        "<tr>" + "".join(f"<td{classe(i)}>{inline_md(c)}</td>" for i, c in enumerate(completar(cels))) + "</tr>"
+        for cels in corpo) + "</tbody>")
+    partes.append("</table></div>")
+    return "".join(partes)
+
+
 def markdown_para_html(md: str, base: int = 3) -> str:
     """Converte um trecho de markdown: títulos (a partir de h{base}), parágrafos,
-    listas com sub-itens (por indentação) e linhas de continuação."""
+    listas com sub-itens (por indentação), linhas de continuação e tabelas."""
     saida: list[str] = []
     pilha: list[tuple[int, str]] = []  # (indentação, "ul"|"ol") das listas abertas; o <li> fica aberto
     paragrafo: list[str] = []
+    tabela: list[str] = []  # linhas '| ... |' consecutivas
 
     def fechar_paragrafo():
         nonlocal paragrafo
@@ -237,8 +287,20 @@ def markdown_para_html(md: str, base: int = 3) -> str:
             _, tag = pilha.pop()
             saida.append(f"</li></{tag}>")
 
+    def fechar_tabela():
+        nonlocal tabela
+        if tabela:
+            saida.append(tabela_md_para_html(tabela))
+            tabela = []
+
     for linha in md.splitlines():
         bruto = linha.rstrip()
+        if re.match(r"^\s*\|.*\|$", bruto):
+            fechar_paragrafo()
+            fechar_listas()
+            tabela.append(bruto)
+            continue
+        fechar_tabela()
         if not bruto.strip():
             fechar_paragrafo()  # linha vazia não fecha a lista (o briefing espaça itens)
             continue
@@ -282,6 +344,7 @@ def markdown_para_html(md: str, base: int = 3) -> str:
         fechar_listas()
         paragrafo.append(inline_md(bruto.strip()))
 
+    fechar_tabela()
     fechar_paragrafo()
     fechar_listas()
     return "\n".join(saida)
@@ -472,9 +535,13 @@ FAVO_COMPACTO = [(0, -1), (1, -1), (-1, 0), (0, 0), (1, 0), (-1, 1), (0, 1), (2,
 FAVO_ANGULO = 44.75
 
 
-def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe: str) -> tuple[str, float]:
-    """SVG do favo. Devolve (svg, altura em px na escala 1:1)."""
-    rotulos = dict(FAVO_ORDEM)
+def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe: str,
+             nav: dict[tuple[int, int], str] | None = None,
+             ordem: list[tuple[str, str]] | None = None) -> tuple[str, float]:
+    """SVG do favo. Devolve (svg, altura em px na escala 1:1).
+    nav/ordem trocam as seções do menu (o dashboard semanal usa outras); sem eles, FAVO_NAV/FAVO_ORDEM."""
+    mapa_nav = FAVO_NAV if nav is None else nav  # "nav" é reutilizado abaixo como lista das células
+    rotulos = dict(FAVO_ORDEM if ordem is None else ordem)
     a, b = math.radians(FAVO_ANGULO), math.radians(FAVO_ANGULO + 60)
     r_nav = (passo - 4) / math.sqrt(3)  # 4 px de vão entre células vizinhas
     r_deco = r_nav * 0.9                # decorativos um pouco menores: os de navegação sobressaem
@@ -512,9 +579,9 @@ def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe:
         vx, vy = cx + r_deco * math.cos(ang_baixo), cy + r_deco * math.sin(ang_baixo)
         return [o for o, (ox, oy) in centros.items() if o != c and abs(ox - vx) < passo * 0.6 and oy > vy - passo * 0.15]
 
-    decorativas = sorted((c for c in centros if FAVO_NAV.get(c) is None), key=lambda c: centros[c][0])
+    decorativas = sorted((c for c in centros if mapa_nav.get(c) is None), key=lambda c: centros[c][0])
     borda = [c for c in decorativas if not sob_vertice(c)]
-    internas = [c for c in decorativas if sob_vertice(c) and all(FAVO_NAV.get(o) is None for o in sob_vertice(c))]
+    internas = [c for c in decorativas if sob_vertice(c) and all(mapa_nav.get(o) is None for o in sob_vertice(c))]
 
     def espalhar(lista: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
         if n <= 0 or not lista:
@@ -555,7 +622,7 @@ def favo_svg(celulas: list[tuple[int, int]], passo: float, fonte: float, classe:
 
     deco, nav, gotas = [], [], []
     for c, (cx, cy) in centros.items():
-        alvo = FAVO_NAV.get(c)
+        alvo = mapa_nav.get(c)
         d = f"{0.45 * dist[c] / dist_max:.2f}"
         if alvo is None:
             cheia = " cheia" if c in com_gota else ""
@@ -857,6 +924,14 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .slide-corpo p{margin-bottom:10px}
 .slide-corpo h4,.slide-corpo h5{color:var(--oliva);margin:6px 0 8px;font-size:1.05em}
 .slide-corpo hr{border:0;border-top:1px solid var(--divisoria);margin:10px 0}
+/* tabelas markdown dentro do slide: mesma linguagem das tabelas claras, com borda (card e tabela têm o mesmo fundo) */
+.slide-corpo .tabela-md{overflow-x:auto;margin:2px 0 12px;border:1px solid var(--tabela-linha);border-radius:16px;break-inside:avoid;scrollbar-width:thin}
+.slide-corpo table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.slide-corpo th{background:var(--tabela-cabeca);color:var(--tabela-muted);font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:10px 16px;border-bottom:1px solid var(--tabela-linha);white-space:nowrap}
+.slide-corpo td{padding:9px 16px;border-top:1px solid var(--tabela-linha);color:var(--tabela-ink)}
+.slide-corpo tbody tr:first-child td{border-top:0}
+.slide-corpo .al-c{text-align:center}
+.slide-corpo .al-d{text-align:right}
 .slider-controles{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:18px}
 .seta{background:none;border:0;color:var(--oliva);font:400 34px/1 var(--serif);cursor:pointer;padding:2px 12px;border-radius:12px;transition:transform .2s var(--ease),opacity .2s,background .2s}
 .seta:hover{transform:scale(1.15);background:rgba(40,54,24,.08)}
