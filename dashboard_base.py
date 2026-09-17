@@ -831,7 +831,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .badge.neutro{background:var(--neutro-bg);color:var(--oliva)}
 
 /* Destaques */
-.grade-destaques{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto 1fr;gap:var(--gap)}
+.grade-destaques{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto 1fr;gap:var(--gap)}
 .grade-destaques .card{min-height:auto}
 .grade-destaques .titulo-secao{align-self:start;padding-top:.12em}
 /* anatomia única dos KPIs: rótulo em caixa alta, número (marfim, itálico 800), linha de julgamento (delta), rodapé de contexto.
@@ -862,7 +862,7 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .kpi-vazio{font:400 clamp(16px,2.2vh,20px)/1.3 var(--serif);color:var(--tinta-2)}
 
 /* Evolução */
-.graficos{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+.graficos{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
 .card-grafico{gap:8px}
 .card-grafico .kpi-linha{gap:4px clamp(12px,1.4vw,24px)}
 .grafico-caixa{position:relative;flex:1 1 auto;min-height:120px;transition:height .5s var(--ease)}
@@ -963,7 +963,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .indicadores button[aria-selected=true]{background:var(--oliva);transform:scaleY(1.3)}
 
 /* Fontes */
-.grade-fontes{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);align-content:start}
+.grade-fontes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);align-content:start}
 .card-fonte{min-height:clamp(180px,30vh,320px)}
 .kpi-fonte.ok{background:var(--verde);color:var(--oliva-escuro)}
 .fonte-detalhe{font-size:clamp(13px,1.7vh,15px);font-weight:600;color:var(--tinta-2)}
@@ -1093,6 +1093,11 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 /* ---- cards de desenvolvedor ---- */
 .grade-dev{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--gap)}
 .card-dev .dev-nome{font:800 var(--t-card)/1.15 var(--sans);letter-spacing:-.01em;color:var(--tinta)}
+.card-dev .kpi-mini{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:var(--t-meta);color:var(--tinta-2)}
+.card-dev .kpi-mini b{color:var(--tinta)}
+/* Trabalho ativo: a unica linha do card que fala do agora, nao do acumulado. */
+.card-dev .destaque-trabalho{padding-top:8px;border-top:1px solid var(--divisoria)}
+.card-dev .destaque-trabalho b{color:var(--oliva-escuro)}
 .card-dev .dev-sistemas{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;
   background:var(--neutro-bg);color:var(--tinta-2);font-size:11.5px;font-weight:700}
@@ -1101,10 +1106,84 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 /* ---- grade com dois gráficos por linha, até quatro ---- */
 .graficos.quatro{grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr))}
 /* destaques com mais de quatro cards: linhas extras em vez de esmagar as duas fixas */
-.grade-destaques.ampla{grid-template-rows:auto auto;grid-auto-rows:minmax(clamp(130px,17vh,190px),auto);align-content:start;flex:0 0 auto}
+.grade-destaques.ampla{grid-template-rows:auto auto;grid-auto-rows:minmax(clamp(130px,17vh,190px),auto);align-content:start}
 .grade-destaques.ampla .card{min-height:0}
 .bloco-sistema+.bloco-sistema{margin-top:18px}
 .bloco-sistema h4{margin-bottom:8px}
+
+/* ==== CONTRATO DE LAYOUT ===================================================
+   A .secao e um flex column de ALTURA FIXA (position:absolute;inset:0). Todo
+   filho direto declara seu papel:
+     .bloco-fixo      ocupa o que precisa e NAO encolhe;
+     .bloco-elastico  absorve a sobra e pode comprimir.
+   Sem isso todo filho e flex-shrink:1 e o navegador distribui o encolhimento
+   sozinho: esmaga o flexivel (o canvas do grafico vira tira, porque e
+   position:absolute;inset:0;height:100%) e deixa o rigido transbordar por cima
+   do vizinho. Foi a causa da quebra de 17/09/2026.
+   Estas regras vem DEPOIS de todos os componentes de proposito: a classe do
+   HTML precisa vencer o flex declarado dentro de qualquer grade.
+   Coberto por testes/test_layout.py -- nao remova sem rodar os testes.       */
+.secao>.bloco-fixo{flex:0 0 auto;min-width:0}
+.secao>.bloco-elastico{flex:1 1 auto;min-height:0;min-width:0}
+
+/* ==== GRADE UNICA DE CARDS =================================================
+   Uma definicao para as quatro paginas. A densidade muda por --card-min, nunca
+   por uma grade nova: grade propria dentro de gerador foi metade da causa da
+   quebra (o diretor e o financeiro tinham as suas). O min(100%,...) impede a
+   coluna de estourar a linha em tela estreita.                               */
+.grade{display:grid;gap:var(--gap);align-content:start;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--card-min,240px)),1fr))}
+.grade.estreita{--card-min:150px}
+.grade.densa{--card-min:200px}
+.grade.larga{--card-min:320px}
+
+/* Grades que moravam nos geradores, trazidas para a base. Agora sao so a
+   densidade da grade padrao -- a mecanica e uma so. */
+.painel-exec{--card-min:230px}
+.duas-colunas-secao{--card-min:300px}
+.faixa-prazo{--card-min:150px;margin-top:4px}
+.mov-grade{--card-min:260px}
+
+/* ---- vindo de CSS_DIRETOR ---- */
+.card-exec{display:flex;flex-direction:column;justify-content:space-between}
+.card-exec .kpi-numero{font-size:var(--t-num-2)}
+.card-exec .kpi-rotulo{color:var(--oliva)}
+.leitura-exec{font-size:clamp(15px,1.7vh,18px);line-height:1.62}
+.leitura-exec li{margin-bottom:7px}
+
+/* ---- vindo de CSS_FINANCEIRO ---- */
+.faixa-prazo .card{padding:clamp(14px,1.5vw,22px)}
+.faixa-prazo .kpi-numero{font-size:var(--t-num-2)}
+.faixa-prazo .critica{background:var(--verm-bg)}
+.faixa-prazo .urgente{background:var(--ambar-bg)}
+.mov-lista{margin-top:10px;display:grid;gap:7px}
+.mov-item{display:flex;justify-content:space-between;gap:10px;font-size:var(--t-meta);
+  padding-bottom:6px;border-bottom:1px solid var(--divisoria)}
+.mov-item:last-child{border-bottom:0}
+.mov-item .cliente{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mov-item .quando{color:var(--tinta-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mov-vazio{font-size:var(--t-meta);color:var(--tinta-2);font-style:italic;margin-top:8px}
+.aviso-escopo{margin-top:auto;font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
+  background:var(--ambar-bg);border-radius:14px;padding:11px 15px}
+
+/* ---- vindo de CSS_SEMANAL ---- */
+.pill.atual{background:var(--bom-bg);color:var(--bom)}
+.pill.anterior{background:var(--neutro-bg);color:var(--tinta-2)}
+.tabela-lic .apagado{color:var(--tabela-muted);font-style:italic}
+
+/* ==== DENSIDADE POR ALTURA DE TELA =========================================
+   O projeto so tinha breakpoint de LARGURA. Num notebook de 639px de altura o
+   topo come 185px e sobram ~357px de painel util -- foi exatamente ali que o
+   layout quebrou. Aqui o topo e os espacos cedem antes do conteudo.          */
+@media (max-height:820px){
+  :root{--topo-h:clamp(140px,22vh,230px);--gap:18px;--pad:22px;--pad-card:20px}
+}
+@media (max-height:680px){
+  :root{--topo-h:clamp(116px,18vh,170px);--gap:14px;--pad:16px;--pad-card:16px}
+  .grade{--card-min:200px}
+  .grade.larga{--card-min:280px}
+  .grade.densa{--card-min:180px}
+}
 """
 
 
@@ -1664,6 +1743,30 @@ def badge_delta(atual, anterior, rotulo="vs. dia anterior", melhor="menor") -> s
     return f'<span class="badge {"bom" if bom else ""}"><span aria-hidden="true">{seta}</span><b>{abs(d)}</b> {esc(rotulo)}</span>'
 
 
+def base_status_comparavel(helpdesk: dict | None, anterior: dict) -> bool:
+    """A fila de hoje e a do dia anterior saem do mesmo conjunto de status?
+
+    Quando HELPDESK_STATUS_EXCLUIDOS muda -- e no dia em que a regra global
+    entrou em vigor -- o total salta sem que nada tenha acontecido na operação.
+    Mostrar "+X vs. dia anterior" nesse caso é mentira estatística: quem gerou o
+    número foi a configuração, não a fila. Nesses dias o badge some.
+
+    Linha antiga do histórico não tem fila_status_qtd; como a coleta de hoje tem,
+    a ausência já é a prova de que a base mudou.
+    """
+    hoje = len((helpdesk or {}).get("status_consultados") or []) or None
+    if not hoje:
+        return True  # coleta anterior à regra: nada a comparar de diferente
+    return hoje == (anterior or {}).get("fila_status_qtd")
+
+
+AVISO_BASE_MUDOU = (
+    "A comparação com o dia anterior está suspensa nesta seção: o conjunto de status "
+    "consultados no Milldesk mudou, então o total de hoje e o de ontem não saem da "
+    "mesma régua. Os badges voltam na próxima coleta."
+)
+
+
 def etiqueta_fonte(estado: dict) -> str:
     """Etiqueta no canto do card quando a fonte está desatualizada ou indisponível (metadado, separado do delta)."""
     if estado["estado"] == "desatualizada":
@@ -1699,9 +1802,10 @@ def titulo_secao(texto: str, id_: str, linhas: list[str] | None = None) -> str:
 
 
 def secao_vazia(id_: str, titulo: str, mensagem: str) -> str:
-    cab = f'<header class="secao-cabeca dividida">{titulo_secao(titulo, id_)}</header>'
+    cab = (f'<header class="secao-cabeca dividida bloco-fixo">'
+           f'{titulo_secao(titulo, id_)}</header>')
     return (f'<section class="secao" id="{id_}" data-scroll aria-labelledby="t-{id_}">{cab}'
-            f'<p class="vazio">{mensagem}</p></section>')
+            f'<p class="vazio bloco-elastico">{mensagem}</p></section>')
 
 
 def render_ranking(nomes: list, valores: list) -> str:
@@ -1747,16 +1851,25 @@ FONTES_INFO: dict[str, tuple[str, str, str]] = {
 # chave -> (fonte, o que a métrica é, como ela é calculada)
 METRICAS: dict[str, tuple[str, str, str]] = {
     "fila_total": ("milldesk", "Todos os chamados em aberto no Milldesk, de todos os técnicos.",
-                   "Soma dos chamados devolvidos por showTicketsByStatus para cada status tratado como aberto."),
+                   "Em aberto aqui quer dizer: qualquer status que não seja Fechado. O coletor pede a "
+                   "lista de status à própria API e consulta todos, menos os de HELPDESK_STATUS_EXCLUIDOS."),
     "fila_sistema": ("milldesk", "Chamados em aberto do sistema, dentro da mesma fila total.",
                      "Classificados pela categoria do chamado (campo category), segundo o mapa HELPDESK_SISTEMAS."),
     "equipe_abertos": ("milldesk", "Chamados em aberto atribuídos aos técnicos monitorados.",
-                       "Filtra a fila pelos nomes de HELPDESK_AGENT_NAME (comparação sem acento e sem caixa)."),
+                       "Filtra a fila pelo campo Técnico do chamado contra os nomes de "
+                       "HELPDESK_AGENT_NAME (comparação por trecho, sem acento e sem caixa)."),
     "atend_fechados": ("milldesk", "Atendimentos fechados no último dia útil.",
                        "Chamados do solicitante de atendimento diário, com status Fechado, criados naquele dia; "
                        "o técnico sai da linha 'Técnico:' da descrição."),
     "dev_atribuidos": ("milldesk", "Chamados em aberto atribuídos aos desenvolvedores.",
-                       "Filtra a fila pelos nomes de HELPDESK_DEV_NAMES."),
+                       "Filtra a fila pelo campo Técnico do chamado contra os nomes de "
+                       "HELPDESK_DEV_NAMES, em qualquer status que não seja Fechado."),
+    "dev_total_nome": ("milldesk", "Tudo que está no nome do desenvolvedor, em qualquer status menos Fechado.",
+                       "Campo Técnico do chamado igual ao nome do dev; é o número grande do card."),
+    "dev_em_trabalho": ("milldesk", "Do total do desenvolvedor, quanto está em trabalho ativo agora.",
+                        "Chamados cujo status é exatamente um dos de HELPDESK_STATUS_TRABALHO "
+                        "(hoje: Com o Desenvolvedor e Em atendimento), somados. O resto do total "
+                        "está parado em espera, teste, aprovação ou deploy."),
     "dev_equipe": ("milldesk", "Carga de cada equipe de desenvolvimento.",
                    "Agrupa os desenvolvedores de HELPDESK_DEV_NAMES pelas equipes de "
                    "HELPDESK_DEV_EQUIPES; quem não está em nenhuma cai na equipe padrão. "
@@ -1810,16 +1923,16 @@ def explica(chave: str, extra: str = "") -> str:
     Métrica desconhecida devolve string vazia -- nunca quebra a página.
     """
     if chave not in METRICAS:
-        return f'<p class="kpi-explica">{esc(extra)}</p>' if extra else ""
+        return f'<p class="kpi-explica bloco-fixo">{esc(extra)}</p>' if extra else ""
     _, o_que, como = METRICAS[chave]
     complemento = f" {esc(extra)}" if extra else ""
-    return (f'<p class="kpi-explica"><b>O que é:</b> {esc(o_que)}{complemento}'
+    return (f'<p class="kpi-explica bloco-fixo"><b>O que é:</b> {esc(o_que)}{complemento}'
             f'<span class="como"><b>Como é contado:</b> {esc(como)}</span></p>')
 
 
 def nota_secao(chave_fonte: str, texto: str) -> str:
     """Nota no alto da seção dizendo de qual fonte ela toda vem."""
-    return f'<p class="secao-nota">{tag_fonte(chave_fonte)}{esc(texto)}</p>'
+    return f'<p class="secao-nota bloco-fixo">{tag_fonte(chave_fonte)}{esc(texto)}</p>'
 
 
 def barras_distribuicao(dados: dict, limite: int = 8, criticos: tuple = ()) -> str:
@@ -1910,7 +2023,7 @@ def cards_equipes_dev(por_equipe: dict, mostrar_nomes: bool = True) -> str:
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
   <div class="dev-sistemas">{natureza}</div>
 </article>""")
-    return f'<div class="grade-dev">{"".join(cards)}</div>'
+    return f'<div class="grade grade-dev bloco-elastico">{"".join(cards)}</div>'
 
 
 def card_grafico(id_canvas: str, titulo: str, descricao: str, corpo_topo: str = "") -> str:

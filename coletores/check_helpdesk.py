@@ -3,16 +3,18 @@
 API: https://v1.milldesk.com/api/:api_key/<endpoint>  (chave vai na URL)
 
 Fluxo:
-  1. listTicketStatus     -> lista os status existentes (para você configurar)
-  2. showTicketsByStatus  -> chamados de cada status "aberto"
+  1. listTicketStatus     -> lista os status existentes no Milldesk
+  2. showTicketsByStatus  -> chamados de cada status MENOS os excluídos
+     (regra global: "em aberto" = tudo que não está Fechado)
   3. ticketsByAgent       -> contagem geral por técnico (visão da equipe)
   4. Filtra os chamados pelos nomes em HELPDESK_AGENT_NAME (um ou vários,
      separados por ";" - ex.: "Seu Nome;Colega 1;Colega 2")
 
-Primeira execução: rode `python coletores/check_helpdesk.py --listar-status`
-para ver os status do seu Milldesk e preencher HELPDESK_STATUS_ABERTOS no .env.
-Depois rode `--listar-categorias` para ver as categorias/departamentos reais da
-fila e preencher HELPDESK_SISTEMAS e HELPDESK_DEV_NAMES.
+Os status consultados saem da própria API a cada execução: pega-se tudo e
+subtrai-se HELPDESK_STATUS_EXCLUIDOS (default: "Fechado"). HELPDESK_STATUS_ABERTOS
+ficou como fallback, usado só quando listTicketStatus não responde.
+Rode `--listar-status` para ver os status existentes e `--listar-categorias` para
+ver categorias/técnicos reais da fila (HELPDESK_SISTEMAS, HELPDESK_DEV_NAMES).
 
 Somente leitura: nenhum endpoint de escrita é chamado. Os agregados novos
 (fila por sistema, por status, por técnico, idade, bloco de desenvolvimento) são
@@ -42,8 +44,28 @@ API_KEY = os.environ["HELPDESK_API_KEY"]
 AGENT_NAMES = [
     n.strip() for n in os.getenv("HELPDESK_AGENT_NAME", "").split(";") if n.strip()
 ]
+# Fallback: usado apenas quando listTicketStatus nao responde (ver
+# status_para_consultar). Desde a regra global abaixo, a fila NAO sai daqui.
 STATUS_ABERTOS = [
     s.strip() for s in os.getenv("HELPDESK_STATUS_ABERTOS", "").split(";") if s.strip()
+]
+# REGRA GLOBAL (decisao do Guilherme, 17/09/2026): "chamado em aberto" passa a
+# ser TUDO que existe no Milldesk MENOS estes status. Antes era o contrario --
+# uma lista de inclusao com 6 status, que deixava "Rejeitado", "Aberto",
+# "Em Analise" e "Aguardando Deploy" fora de toda conta do painel.
+# A comparacao e EXATA (sem acento e sem caixa): "Fechado" nao casa com
+# "Fechados". Nome configurado que nao existe na API vira aviso_status.
+STATUS_EXCLUIDOS = [
+    s.strip() for s in os.getenv("HELPDESK_STATUS_EXCLUIDOS", "Fechado").split(";")
+    if s.strip()
+]
+# Status que significam trabalho ativo na mao de alguem. Somados e exibidos
+# juntos no card de cada dev, por pedido do Guilherme.
+STATUS_TRABALHO = [
+    s.strip() for s in os.getenv(
+        "HELPDESK_STATUS_TRABALHO", "Com o Desenvolvedor;Em atendimento",
+    ).split(";")
+    if s.strip()
 ]
 # Desenvolvedores (nomes como no Milldesk, separados por ";"). Sem isso, o bloco
 # de desenvolvimento sai vazio e o dashboard mostra "não configurado".
@@ -119,6 +141,41 @@ def chamar(endpoint: str, params: dict | None = None):
 def listar_status() -> list[dict]:
     dados = chamar("listTicketStatus")
     return dados if isinstance(dados, list) else [dados]
+
+
+def status_para_consultar() -> tuple[list[str], list[str], str | None]:
+    """Todos os status da API menos os de HELPDESK_STATUS_EXCLUIDOS.
+
+    Devolve (consultar, disponiveis, aviso). Nunca levanta excecao: se
+    listTicketStatus cair, volta o fallback HELPDESK_STATUS_ABERTOS com um
+    aviso -- degradacao e requisito deste pipeline, nao cortesia.
+    """
+    try:
+        brutos = listar_status()
+    except Exception as e:  # rede, chave invalida, corpo inesperado
+        return (list(STATUS_ABERTOS), [],
+                f"listTicketStatus indisponivel ({e}); usando HELPDESK_STATUS_ABERTOS")
+
+    disponiveis = [s for s in (str(d.get("status") or "").strip() for d in brutos) if s]
+    if not disponiveis:
+        return (list(STATUS_ABERTOS), [],
+                "listTicketStatus devolveu lista vazia; usando HELPDESK_STATUS_ABERTOS")
+
+    excluir = {normalizar(s) for s in STATUS_EXCLUIDOS}
+    consultar = [s for s in disponiveis if normalizar(s) not in excluir]
+    if not consultar:
+        return (list(STATUS_ABERTOS), disponiveis,
+                "todos os status foram excluidos; usando HELPDESK_STATUS_ABERTOS")
+
+    # Nome configurado que nao existe na API nao exclui nada -- e o jeito mais
+    # facil de a fila inchar em silencio ("Fechados" no lugar de "Fechado").
+    achados = {normalizar(s) for s in disponiveis}
+    fantasmas = [s for s in STATUS_EXCLUIDOS if normalizar(s) not in achados]
+    aviso = None
+    if fantasmas:
+        aviso = ("HELPDESK_STATUS_EXCLUIDOS cita status que nao existem na API: "
+                 + ", ".join(fantasmas))
+    return consultar, disponiveis, aviso
 
 
 def tickets_por_status(status: str) -> list[dict]:
@@ -462,6 +519,15 @@ def bloco_desenvolvimento(todos: list[dict]) -> dict:
         atual = normalizar(t.get("_status_consultado") or t.get("status") or "")
         return any(s in atual for s in alvo_status)
 
+    # Trabalho ativo = status EXATO em HELPDESK_STATUS_TRABALHO. Exato de
+    # proposito: com a comparacao por trecho usada acima, um status futuro
+    # como "Em atendimento externo" entraria na conta sem ninguem perceber.
+    alvo_trabalho = {normalizar(s) for s in STATUS_TRABALHO}
+
+    def em_trabalho_ativo(t: dict) -> bool:
+        atual = normalizar(t.get("_status_consultado") or t.get("status") or "")
+        return atual in alvo_trabalho
+
     def dev_do_ticket(t: dict) -> str:
         tecnico = normalizar(campo_tecnico(t))
         for nome in DEV_NAMES:
@@ -505,11 +571,18 @@ def bloco_desenvolvimento(todos: list[dict]) -> dict:
                 por_equipe.items(), key=lambda kv: -len(kv[1]["tickets"]))
         },
         "status_considerados_dev": STATUS_DEV,
+        "status_considerados_trabalho": STATUS_TRABALHO,
         "total_atribuidos_a_devs": len(dos_devs),
         "total_em_status_dev": len(em_dev),
         "por_dev": {
             nome: {
                 "abertos": len(lista),
+                # Espelho explicito de "abertos": com a regra global, e o
+                # total de chamados no nome do dev em qualquer status menos
+                # Fechado. Campo proprio porque os prompts dos .bat e os
+                # geradores citam nome de campo literalmente.
+                "total_no_nome": len(lista),
+                "em_trabalho": sum(1 for t in lista if em_trabalho_ativo(t)),
                 "novos_hoje": sum(1 for t in lista if eh_de_hoje(t.get("start", ""))),
                 "por_sistema": contar_por(lista, sistema_do_ticket),
                 "por_natureza": contar_por(lista, natureza_do_ticket),
@@ -572,10 +645,19 @@ def main() -> None:
     # Modo utilitario: ver os valores REAIS da fila para configurar
     # HELPDESK_SISTEMAS e HELPDESK_DEV_NAMES sem chutar nome de categoria.
     if "--listar-categorias" in sys.argv:
-        if not STATUS_ABERTOS:
-            raise SystemExit("Configure HELPDESK_STATUS_ABERTOS no .env primeiro.")
+        status_consultar, _, aviso = status_para_consultar()
+        if aviso:
+            print(f"AVISO: {aviso}\n")
+        if not status_consultar:
+            raise SystemExit(
+                "Nenhum status para consultar: listTicketStatus falhou e "
+                "HELPDESK_STATUS_ABERTOS esta vazio no .env."
+            )
+        excluidos = ", ".join(STATUS_EXCLUIDOS) or "nenhum"
+        print(f"Consultando {len(status_consultar)} status (excluidos: {excluidos}):")
+        print("  " + ", ".join(status_consultar) + "\n")
         fila: list[dict] = []
-        for status in STATUS_ABERTOS:
+        for status in status_consultar:
             fila.extend(tickets_por_status(status))
         print(f"Fila com {len(fila)} chamados abertos.\n")
         for titulo, chave in [("CATEGORIAS", "category"), ("SUBCATEGORIAS", "subcategory"),
@@ -601,15 +683,21 @@ def main() -> None:
         print("Formato: 'Rotulo=trecho1,trecho2;Outro=trecho3' (trecho casa sem acento e sem caixa).")
         return
 
-    if not STATUS_ABERTOS:
+    # 1) Busca os chamados de TODOS os status menos os excluidos. A lista sai da
+    #    API a cada execucao: status novo criado no Milldesk entra sozinho, sem
+    #    ninguem precisar lembrar de mexer no .env.
+    status_consultar, status_disponiveis, aviso_status = status_para_consultar()
+    if aviso_status:
+        print(f"AVISO: {aviso_status}")
+    if not status_consultar:
         raise SystemExit(
-            "Configure HELPDESK_STATUS_ABERTOS no .env primeiro.\n"
+            "Nenhum status para consultar: listTicketStatus falhou e "
+            "HELPDESK_STATUS_ABERTOS esta vazio no .env.\n"
             "Rode: python coletores/check_helpdesk.py --listar-status"
         )
 
-    # 1) Busca os chamados de todos os status abertos
     todos: list[dict] = []
-    for status in STATUS_ABERTOS:
+    for status in status_consultar:
         todos.extend(tickets_por_status(status))
 
     # 2) Separa os chamados dos agentes monitorados (você + equipe)
@@ -651,11 +739,27 @@ def main() -> None:
     agregados = agregar_fila(todos)
     resultado_por_sistema = agregados["por_sistema"]
 
+    # Mesma fila, restrita aos status que ERAM consultados antes da regra global.
+    # Existe so para o historico nao ganhar um degrau falso no dia da virada: e
+    # esta serie que continua comparavel com os dias ja gravados.
+    base_anterior = {normalizar(s) for s in STATUS_ABERTOS}
+    total_base_anterior = sum(
+        1 for t in todos
+        if normalizar(t.get("_status_consultado") or "") in base_anterior
+    ) if base_anterior else None
+
     resultado = {
         "fonte": "helpdesk (Milldesk)",
         "data": date.today().isoformat(),
         "coletado_em": datetime.now().isoformat(),
         "fila_total_abertos": len(todos),
+        "fila_total_base_anterior": total_base_anterior,
+        # Trilha de auditoria da regra "tudo menos Fechado": sem isso ninguem
+        # consegue explicar por que o total mudou de um dia para o outro.
+        "status_consultados": status_consultar,
+        "status_disponiveis": status_disponiveis,
+        "status_excluidos": STATUS_EXCLUIDOS,
+        "aviso_status": aviso_status,
         # "meus_*" = soma de todos os agentes em HELPDESK_AGENT_NAME
         "agentes_monitorados": AGENT_NAMES,
         "meus_abertos": len(meus),
@@ -687,6 +791,11 @@ def main() -> None:
         json.dumps(resultado, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"OK -> {SAIDA}")
+    excluidos = ", ".join(STATUS_EXCLUIDOS) or "nenhum"
+    print(f"Status consultados: {len(status_consultar)} de "
+          f"{len(status_disponiveis) or len(status_consultar)} (excluidos: {excluidos})")
+    if total_base_anterior is not None:
+        print(f"Fila na base anterior (HELPDESK_STATUS_ABERTOS): {total_base_anterior}")
     detalhe = " | ".join(f"{n}: {len(l)}" for n, l in por_agente.items())
     print(f"Fila: {len(todos)} abertos | Monitorados: {len(meus)}" + (f" ({detalhe})" if detalhe else ""))
     sistemas = " | ".join(f"{k}: {v}" for k, v in resultado["fila"]["por_sistema"].items())

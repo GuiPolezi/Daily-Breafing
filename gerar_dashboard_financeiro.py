@@ -52,23 +52,6 @@ FAVO_NAV_FIN = {(-1, 1): "destaques", (0, -1): "briefing", (1, -1): "radar",
                 (-1, 0): "movimentacao", (1, 0): "evolucao", (0, 0): "fontes"}
 
 # Só o que o diário não tem. Nomes novos não colidem com as classes existentes.
-CSS_FINANCEIRO = """
-.faixa-prazo{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--gap);margin-top:4px}
-.faixa-prazo .card{padding:clamp(14px,1.5vw,22px)}
-.faixa-prazo .kpi-numero{font-size:var(--t-num-2)}
-.faixa-prazo .critica{background:var(--verm-bg)}
-.faixa-prazo .urgente{background:var(--ambar-bg)}
-.mov-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:var(--gap)}
-.mov-lista{margin-top:10px;display:grid;gap:7px}
-.mov-item{display:flex;justify-content:space-between;gap:10px;font-size:var(--t-meta);
-  padding-bottom:6px;border-bottom:1px solid var(--divisoria)}
-.mov-item:last-child{border-bottom:0}
-.mov-item .cliente{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mov-item .quando{color:var(--tinta-2);white-space:nowrap;font-variant-numeric:tabular-nums}
-.mov-vazio{font-size:var(--t-meta);color:var(--tinta-2);font-style:italic;margin-top:8px}
-.aviso-escopo{margin-top:auto;font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
-  background:var(--ambar-bg);border-radius:14px;padding:11px 15px}
-"""
 
 
 def ler_relatorio() -> str | None:
@@ -163,7 +146,7 @@ def gerar_html() -> str:
 </article>""")
         secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <div class="grade-destaques ampla">
+  <div class="grade-destaques ampla bloco-elastico">
     {titulo_secao("Licenças", "destaques", ["Licenças", "Em Risco"])}
     <article class="card kpi kpi-primario" style="--i:0" aria-labelledby="c-venc">
       <div class="kpi-cabeca"><h3 class="kpi-rotulo" id="c-venc">Vencidas · ainda acionáveis</h3>{tag_fonte("licencas")}{etiqueta_fonte(fonte)}</div>
@@ -188,7 +171,7 @@ def gerar_html() -> str:
   </div>
   {nota_secao("licencas", "Painel web interno de licenças, lido uma vez por dia. "
                           "A fonte informa cliente, sistema e vencimento — não há valor nem contrato.")}
-  <div class="faixa-prazo">{''.join(cartoes_faixa)}</div>
+  <div class="grade faixa-prazo bloco-fixo">{''.join(cartoes_faixa)}</div>
 </section>"""
 
     # ============================================================= 2. RELATÓRIO
@@ -210,8 +193,8 @@ def gerar_html() -> str:
             pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
         secao_briefing = f"""
 <section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca dividida">{titulo_secao("Relatório", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
-  <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos do relatório">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Relatório", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
+  <div class="slider bloco-elastico" aria-roledescription="carrossel" aria-label="Tópicos do relatório">
     <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
     <div class="slider-controles">
       <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
@@ -244,17 +227,17 @@ def gerar_html() -> str:
                 f'<td class="num">{esc(it.get("vencimento"))}</td><td class="num{urgente}">{prazo}</td></tr>')
         secao_radar = f"""
 <section class="secao" id="radar" aria-labelledby="t-radar">
-  <header class="secao-cabeca dividida">
+  <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Radar", "radar")}
     <p class="lado subtitulo">{len(itens)} licença(s) em risco · da mais urgente para a menos</p>
   </header>
   {nota_secao("licencas", "Ordenado pelo prazo: vencidas há mais tempo no topo, depois as que vencem antes.")}
-  <div class="tabela-clara" data-scroll tabindex="0" role="region" aria-label="Licenças em risco">
+  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Licenças em risco">
     <table class="tabela-lic"><caption class="sr-only">Licenças vencidas e vencendo, por urgência</caption>
       <thead><tr><th scope="col">Situação</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
       <tbody>{''.join(linhas)}</tbody></table>
   </div>
-  <div class="graficos quatro">
+  <div class="grade larga graficos quatro bloco-elastico">
     <article class="card" data-scroll>
       <div class="kpi-cabeca"><h3 class="kpi-rotulo">Por sistema</h3>{tag_fonte("licencas")}</div>
       {barras_distribuicao(agrupar_licencas_por(itens, "sistema"), limite=8)}
@@ -279,13 +262,13 @@ def gerar_html() -> str:
         mov = comparar_licencas(anterior_retrato, atual_retrato)
         secao_mov = f"""
 <section class="secao" id="movimentacao" data-scroll aria-labelledby="t-movimentacao">
-  <header class="secao-cabeca dividida">
+  <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Mudanças", "movimentacao")}
     <p class="lado subtitulo">de {esc(label_dia(mov["data_antes"] or ""))} para {esc(label_dia(mov["data_agora"] or ""))}</p>
   </header>
   {nota_secao("licencas", "Comparação entre os dois retratos diários mais recentes. "
                           "Uma licença é identificada por cliente + sistema; o que muda é o vencimento.")}
-  <div class="mov-grade">
+  <div class="grade mov-grade bloco-elastico">
     {bloco_movimentacao("Renovadas", mov["renovadas"], "", campo_extra="vencimento_anterior")}
     {bloco_movimentacao("Venceram no período", mov["venceram"], "")}
     {bloco_movimentacao("Entraram na lista", mov["entraram"], "")}
@@ -317,21 +300,21 @@ def gerar_html() -> str:
                     f'<div class="kpi-juizo">{badge_delta(ult, ant, "vs. registro anterior", melhor="menor")}</div></div>')
             cartoes.append(card_grafico(id_canvas, titulo, f"Evolução: {titulo}", topo))
         if chart_js is None:
-            corpo = '<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca não encontrada).</p>'
+            corpo = '<p class="vazio bloco-elastico">Gráficos indisponíveis nesta geração (biblioteca não encontrada).</p>'
             graficos_payload = []
         elif not cartoes:
-            corpo = '<p class="vazio">Ainda não há série suficiente para desenhar gráficos.</p>'
+            corpo = '<p class="vazio bloco-elastico">Ainda não há série suficiente para desenhar gráficos.</p>'
         else:
-            corpo = f'<div class="graficos quatro">{"".join(cartoes)}</div>'
+            corpo = f'<div class="grade larga graficos quatro bloco-elastico">{"".join(cartoes)}</div>'
         linhas_serie = "".join(
             f'<tr><td>{esc(label_dia(d))}</td><td class="c">{fmt_num(v)}</td><td class="d">{fmt_num(p)}</td></tr>'
             for d, v, p in list(zip(serie["datas"], serie["lic_vencidas"], serie["lic_vencendo"]))[::-1])
         secao_evolucao = f"""
 <section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
-  <header class="secao-cabeca dividida">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
   {nota_secao("historico", "Série de historico/metricas.jsonl. Dias sem coleta não aparecem.")}
   {corpo}
-  <div class="serie">
+  <div class="serie bloco-fixo">
     <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="serie-lic"><span class="pilula-texto">Ver dados da série</span>{CHEVRON_SVG}</button></div>
     <div class="expansivel" id="serie-lic"><div><div class="expansivel-pad">
       <table class="tabela-serie"><caption class="sr-only">Licenças por dia</caption>
@@ -351,8 +334,8 @@ def gerar_html() -> str:
     dt = fonte["coletado_em"]
     secao_fontes = f"""
 <section class="secao" id="fontes" data-scroll aria-labelledby="t-fontes">
-  <header class="secao-cabeca dividida">{titulo_secao("Fonte", "fontes")}<p class="lado subtitulo">uma fonte de negócio nesta página</p></header>
-  <div class="grade-fontes">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Fonte", "fontes")}<p class="lado subtitulo">uma fonte de negócio nesta página</p></header>
+  <div class="grade grade-fontes bloco-elastico">
     <article class="card card-fonte kpi" style="--i:0">
       <div class="kpi-cabeca"><h3 class="kpi-rotulo">Sistema de licenças</h3><span class="kpi-fonte {classe_estado}">{rotulo_estado}</span></div>
       <p class="kpi-numero menor">{esc(dt.strftime("%H:%M")) if dt else '<span class="sem-dado">—</span>'}</p>
@@ -372,7 +355,7 @@ def gerar_html() -> str:
       arquivar.py grava um retrato do dia; com dois ou mais, dá para comparar.</p>
     </article>
   </div>
-  <p class="nota-escura">Esta página não exibe nenhum dado de help desk nem nome de integrante da equipe.
+  <p class="nota-escura bloco-fixo">Esta página não exibe nenhum dado de help desk nem nome de integrante da equipe.
   Arquivo estático · sem dependências externas · pode ser enviado sozinho.</p>
 </section>"""
 
@@ -406,7 +389,7 @@ def gerar_html() -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Licenças — Financeiro — {esc(data_dados)}</title>
-<style>{fontes_css}{CSS}{CSS_FINANCEIRO}</style>
+<style>{fontes_css}{CSS}</style>
 {marcador_anim}
 </head>
 <body>

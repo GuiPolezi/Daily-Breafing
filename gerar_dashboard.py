@@ -21,8 +21,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    ABELHA_SVG, CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, FONTES_INFO, JS_CHARTS, JS_HEADER, JS_UI,
-    MOSTRAR_RANKING, RAIZ, TRACO_SVG, badge_delta, barras_distribuicao, card_grafico,
+    ABELHA_SVG, AVISO_BASE_MUDOU, CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, FONTES_INFO,
+    JS_CHARTS, JS_HEADER, JS_UI,
+    MOSTRAR_RANKING, RAIZ, TRACO_SVG, badge_delta, barras_distribuicao,
+    base_status_comparavel, card_grafico,
     cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, classificar_licenca,
     coletar_nomes_tecnicos, data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica,
@@ -79,12 +81,14 @@ def ler_relatorio() -> str | None:
 # Secoes do menu -- so do briefing diario; cada pagina define as suas.
 FAVO_ORDEM = [
     ("destaques", "Destaques"), ("briefing", "Briefing"), ("desenvolvimento", "Desenv."),
-    ("licencas", "Licenças"), ("evolucao", "Evolução"), ("eficacia", "Suporte"),
-    ("fontes", "Fontes"),
+    ("desenv-analise", "Análise"), ("licencas", "Licenças"), ("evolucao", "Evolução"),
+    ("eficacia", "Suporte"), ("fontes", "Fontes"),
 ]
+# (2,-1) estava livre em FAVO_COMPACTO e FAVO_CHEIO -- a divisão da seção
+# Desenvolvimento em duas coube no favo sem redesenhar o menu.
 FAVO_NAV = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia",
             (1, -1): "licencas", (0, -1): "briefing", (0, 0): "fontes",
-            (0, 1): "desenvolvimento"}
+            (0, 1): "desenvolvimento", (2, -1): "desenv-analise"}
 
 
 # --- Montagem da página ------------------------------------------------------
@@ -124,6 +128,26 @@ def gerar_html() -> str:
     if historico:
         anterior = historico[-2] if historico[-1].get("data") == hoje_iso and len(historico) >= 2 else (
             historico[-1] if historico[-1].get("data") != hoje_iso else {})
+
+    # --- a fila de hoje e a de ontem saem da mesma régua de status?
+    # Quando não saem, comparar os dois dias é mentira: o número mudou porque a
+    # configuração mudou. As métricas derivadas da fila perdem o badge.
+    base_comparavel = base_status_comparavel(helpdesk, anterior)
+    CHAVES_DA_FILA = {
+        "fila_abertos", "meus_abertos", "fila_site", "fila_siscam9", "fila_siscam8",
+        "fila_mais_90", "fila_ate_7", "fila_corretivo", "fila_evolutivo",
+        "dev_atribuidos", "dev_em_status",
+    }
+
+    def valor_anterior(chave: str | None):
+        """Valor do dia anterior, ou None quando a base de status mudou."""
+        if not chave:
+            return None
+        if not base_comparavel and chave in CHAVES_DA_FILA:
+            return None
+        return anterior.get(chave)
+
+    aviso_base = "" if base_comparavel else f'<p class="secao-nota bloco-fixo">{AVISO_BASE_MUDOU}</p>'
 
     # --- licenças
     lic_itens = tabela_licencas(licencas)
@@ -167,7 +191,7 @@ def gerar_html() -> str:
   <div class="kpi-corpo">
     <div class="kpi-linha">
       <p class="kpi-numero">{num_html(equipe_abertos)}</p>
-      <div class="kpi-juizo">{badge_delta(equipe_abertos, anterior.get("meus_abertos"), melhor="menor")}</div>
+      <div class="kpi-juizo">{badge_delta(equipe_abertos, valor_anterior("meus_abertos"), melhor="menor")}</div>
       <p class="kpi-secundario"><b>{num_html(novos)}</b> {"novo hoje" if novos == 1 else "novos hoje"}</p>
     </div>
     {lado_largo}
@@ -178,7 +202,7 @@ def gerar_html() -> str:
 <article class="card kpi" style="--i:1" aria-labelledby="c-fila">
   {cabeca_kpi("c-fila", "Fila de chamados · total", fontes["helpdesk"], "milldesk")}
   <p class="kpi-numero">{num_html(helpdesk.get("fila_total_abertos"))}</p>
-  <div class="kpi-juizo">{badge_delta(helpdesk.get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor")}</div>
+  <div class="kpi-juizo">{badge_delta(helpdesk.get("fila_total_abertos"), valor_anterior("fila_abertos"), melhor="menor")}</div>
   {explica("fila_total")}
 </article>"""
         card_atend = f"""
@@ -214,7 +238,7 @@ def gerar_html() -> str:
         ident = re.sub(r"[^a-z0-9]+", "-", rotulo.lower()).strip("-")
         valor = por_sistema.get(rotulo)
         campo_hist = CAMPO_HISTORICO_SISTEMA.get(rotulo)
-        delta = badge_delta(valor, anterior.get(campo_hist) if campo_hist else None, melhor="menor") if valor is not None else ""
+        delta = badge_delta(valor, valor_anterior(campo_hist), melhor="menor") if valor is not None else ""
         # Os números vêm do resumo, calculado sobre a fila inteira. A lista de
         # chamados é uma amostra dos mais urgentes: contar por ela daria menos.
         resumo = dic(resumo_sistema.get(rotulo))
@@ -236,18 +260,18 @@ def gerar_html() -> str:
     sem_recorte = not por_sistema
     aviso_recorte = ""
     if sem_recorte and helpdesk:
-        aviso_recorte = ('<p class="secao-nota">A divisão da fila por sistema aparece depois da próxima coleta '
+        aviso_recorte = ('<p class="secao-nota bloco-fixo">A divisão da fila por sistema aparece depois da próxima coleta '
                          '(o campo <b>fila.por_sistema</b> ainda não existe em dados/helpdesk.json).</p>')
 
     secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <div class="grade-destaques ampla">
+  <div class="grade-destaques ampla bloco-elastico">
     {titulo_secao("Destaques do dia", "destaques", ["Destaques", "Do Dia"])}
     {card_largo}{card_fila}{card_atend}{''.join(cards_sistema)}
   </div>
   {nota_secao("milldesk", "Todos os números desta seção vêm da fila de chamados em aberto do Milldesk, "
                           "exceto onde a etiqueta indicar outra fonte.")}
-  {aviso_recorte}
+  {aviso_recorte}{aviso_base}
 </section>"""
 
     # ================================================================ 2. BRIEFING
@@ -297,8 +321,8 @@ def gerar_html() -> str:
             pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
         secao_briefing = f"""
 <section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca dividida">{titulo_secao("Briefing do Dia", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
-  <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos do briefing">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Briefing do Dia", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
+  <div class="slider bloco-elastico" aria-roledescription="carrossel" aria-label="Tópicos do briefing">
     <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
     <div class="slider-controles">
       <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
@@ -327,11 +351,24 @@ def gerar_html() -> str:
                 f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
                 for k, v in list(dic(b.get("por_sistema")).items())[:4])
             antigo = b.get("mais_antigo_dias")
+            # total_no_nome é espelho de abertos; o fallback mantém a página de pé
+            # com um helpdesk.json gravado antes desses campos existirem.
+            total_nome = b.get("total_no_nome", b.get("abertos"))
+            em_trabalho = b.get("em_trabalho")
+            outros = (total_nome - em_trabalho
+                      if isinstance(total_nome, int) and isinstance(em_trabalho, int) else None)
+            linha_trabalho = ""
+            if em_trabalho is not None:
+                linha_trabalho = (
+                    f'<p class="kpi-mini destaque-trabalho">'
+                    f'<span><b>{fmt_num(em_trabalho)}</b> em trabalho ativo</span>'
+                    f'<span><b>{fmt_num(outros)}</b> em outros status</span></p>')
             cards_dev.append(f"""
 <article class="card kpi card-dev" style="--i:{i}" data-scroll>
   <div class="kpi-cabeca"><p class="dev-nome">{nome_exibido}</p>{tag_fonte("milldesk")}</div>
-  <p class="kpi-numero menor">{num_html(b.get("abertos"))}</p>
-  <p class="kpi-legenda">chamados em aberto · <b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
+  <p class="kpi-numero menor">{num_html(total_nome)}</p>
+  <p class="kpi-legenda">no nome do dev · <b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
+  {linha_trabalho}
   <p class="kpi-mini"><span><b>{fmt_num(b.get("acima_de_90_dias"))}</b> há mais de 90 dias</span>
      <span><b>{fmt_num(antigo) if antigo is not None else "—"}</b> dias o mais antigo</span></p>
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
@@ -344,7 +381,7 @@ def gerar_html() -> str:
 
         secao_dev = f"""
 <section class="secao" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
-  <header class="secao-cabeca dividida">
+  <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Desenvolvimento", "desenvolvimento")}
     <div class="lado">
       <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">atribuídos a desenvolvedores</p></div>
@@ -353,12 +390,22 @@ def gerar_html() -> str:
   </header>
   {nota_secao("milldesk", "Dois recortes diferentes da mesma fila: chamados que têm um desenvolvedor como responsável, "
                           "e chamados parados em status de desenvolvimento (tenham dono ou não).")}
-  <h3 class="kpi-rotulo">Por equipe</h3>
+  <h3 class="kpi-rotulo bloco-fixo">Por equipe</h3>
   {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
   {explica("dev_equipe")}
-  <h3 class="kpi-rotulo">Por desenvolvedor</h3>
-  <div class="grade-dev">{''.join(cards_dev) or '<p class="vazio">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
-  <div class="graficos quatro">
+  <h3 class="kpi-rotulo bloco-fixo">Por desenvolvedor</h3>
+  <div class="grade grade-dev bloco-elastico">{''.join(cards_dev) or '<p class="vazio bloco-elastico">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
+  {explica("dev_em_trabalho")}
+</section>
+
+<section class="secao" id="desenv-analise" data-scroll aria-labelledby="t-desenv-analise">
+  <header class="secao-cabeca dividida bloco-fixo">
+    {titulo_secao("Análise do desenvolvimento", "desenv-analise")}
+    <div class="lado">
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">em status de desenvolvimento</p></div>
+    </div>
+  </header>
+  <div class="grade larga graficos quatro bloco-elastico">
     <article class="card" data-scroll>
       <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em status de desenvolvimento · por status</h3>{tag_fonte("milldesk")}</div>
       {painel_status}
@@ -380,7 +427,7 @@ def gerar_html() -> str:
       {explica("natureza")}
     </article>
   </div>
-  <div class="serie">
+  <div class="serie bloco-fixo">
     <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="dev-tickets"><span class="pilula-texto">Ver chamados em status de desenvolvimento ({fmt_num(min(len(tickets_dev), 20))} de {fmt_num(dev_amostra_de)})</span>{CHEVRON_SVG}</button></div>
     <div class="expansivel" id="dev-tickets"><div><div class="expansivel-pad">
       {tabela_tickets(tickets_dev, limite=20, com_tecnico=MOSTRAR_RANKING)}
@@ -420,10 +467,10 @@ def gerar_html() -> str:
                    '</div>')
         secao_licencas = f"""
 <section class="secao" id="licencas" aria-labelledby="t-licencas">
-  <header class="secao-cabeca dividida">{titulo_secao("Licenças", "licencas")}{sintese}</header>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Licenças", "licencas")}{sintese}</header>
   {nota_secao("licencas", "Painel web interno de licenças. Homologação e teste ficam de fora; "
                           "'vencidas recentes' são as dos últimos 60 dias, ainda acionáveis.")}
-  <div class="tabela-clara" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
+  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
     <table class="tabela-lic"><caption class="sr-only">Licenças vencidas recentemente e vencendo em breve, por urgência</caption>
       <thead><tr><th scope="col">Status</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
       <tbody>{''.join(linhas)}</tbody></table>
@@ -485,13 +532,13 @@ def gerar_html() -> str:
                                         "Distribuição atual da fila por sistema"))
 
         if chart_js is None:
-            corpo_evolucao = ('<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
+            corpo_evolucao = ('<p class="vazio bloco-elastico">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
                               'Os dados seguem na tabela abaixo.</p>')
             graficos_payload = []
         elif not cartoes:
-            corpo_evolucao = '<p class="vazio">Ainda não há série suficiente para desenhar gráficos.</p>'
+            corpo_evolucao = '<p class="vazio bloco-elastico">Ainda não há série suficiente para desenhar gráficos.</p>'
         else:
-            corpo_evolucao = f'<div class="graficos quatro">{"".join(cartoes)}</div>'
+            corpo_evolucao = f'<div class="grade larga graficos quatro bloco-elastico">{"".join(cartoes)}</div>'
 
         linhas_serie = "".join(
             f'<tr><td>{esc(label_dia(d))}</td><td class="c">{fmt_num(f)}</td><td class="d">{fmt_num(a)}</td>'
@@ -500,11 +547,11 @@ def gerar_html() -> str:
         )
         secao_evolucao = f"""
 <section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
-  <header class="secao-cabeca dividida">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
   {nota_secao("historico", "Série montada de historico/metricas.jsonl, uma linha por dia. "
                            "Dias sem coleta não aparecem; métricas novas só existem a partir do dia em que passaram a ser gravadas.")}
   {corpo_evolucao}
-  <div class="serie">
+  <div class="serie bloco-fixo">
   <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="serie-dados"><span class="pilula-texto">Ver dados da série</span>{CHEVRON_SVG}</button></div>
   <div class="expansivel" id="serie-dados"><div><div class="expansivel-pad">
     <table class="tabela-serie"><caption class="sr-only">Dados da série por dia</caption>
@@ -534,7 +581,7 @@ def gerar_html() -> str:
         blocos_fila = ""
         if painel_idade or painel_status:
             blocos_fila = f"""
-  <div class="graficos quatro">
+  <div class="grade larga graficos quatro bloco-elastico">
     <article class="card" data-scroll>
       <div class="kpi-cabeca"><h3 class="kpi-rotulo">Idade dos chamados na fila</h3>{tag_fonte("milldesk")}</div>
       {painel_idade or '<p class="dist-vazio">Sem dados de idade.</p>'}
@@ -548,12 +595,12 @@ def gerar_html() -> str:
   </div>"""
         secao_eficacia = f"""
 <section class="secao" id="eficacia" data-scroll aria-labelledby="t-eficacia">
-  <header class="secao-cabeca dividida">
+  <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Suporte", "eficacia")}
     <div class="lado"><div class="kpi-medida" title="{esc(dias_txt)}"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p><p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
   </header>
   {nota_secao("milldesk", "Produtividade do suporte: atendimentos fechados por técnico, mais o estado da fila em aberto.")}
-  <article class="card card-ranking" style="--i:0" data-scroll>
+  <article class="card card-ranking bloco-elastico" style="--i:0" data-scroll>
     <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3><p class="kpi-legenda">soma dos últimos {len(rank["dias"])} dia(s) útil(eis) registrado(s){esc(nota_rank)}</p></div>
     {render_ranking(nomes_rank, valores_rank)}
     {explica("ranking")}
@@ -601,9 +648,9 @@ def gerar_html() -> str:
 </article>""")
     secao_fontes = f"""
 <section class="secao" id="fontes" data-scroll aria-labelledby="t-fontes">
-  <header class="secao-cabeca dividida">{titulo_secao("Fontes", "fontes")}<p class="lado subtitulo">{sum(1 for f in fontes.values() if f["estado"] == "ok")} de {len(fontes)} fontes atualizadas · coleta de hoje</p></header>
-  <div class="grade-fontes">{''.join(cards_fontes)}</div>
-  <p class="nota-escura">Arquivo estático gerado por gerar_dashboard.py · sem dependências externas · pode ser copiado sozinho.</p>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Fontes", "fontes")}<p class="lado subtitulo">{sum(1 for f in fontes.values() if f["estado"] == "ok")} de {len(fontes)} fontes atualizadas · coleta de hoje</p></header>
+  <div class="grade grade-fontes bloco-elastico">{''.join(cards_fontes)}</div>
+  <p class="nota-escura bloco-fixo">Arquivo estático gerado por gerar_dashboard.py · sem dependências externas · pode ser copiado sozinho.</p>
 </section>"""
 
     # ================================================================ cabeçalho

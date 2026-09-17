@@ -71,7 +71,15 @@ Telegram ou Slack — veja o final do `briefing.sh`.
 ## O que o coletor do help desk extrai
 
 O Milldesk devolve 42 campos por chamado. O coletor baixa a fila inteira e
-agrega tudo **sem nenhuma chamada extra à API**:
+agrega tudo **sem nenhuma chamada extra à API**.
+
+**O que conta como "em aberto":** todos os status do Milldesk **menos `Fechado`**.
+O coletor pede a lista de status à própria API a cada execução e subtrai os de
+`HELPDESK_STATUS_EXCLUIDOS`, então status novo criado no help desk entra sozinho na
+conta. `HELPDESK_STATUS_ABERTOS` ficou como fallback, para quando a API de status
+não responde. O JSON guarda `status_consultados` e `status_excluidos` para auditoria.
+
+Agregados:
 
 - `fila.por_sistema` — chamados por sistema (Site, Siscam 9, Siscam 8...),
   classificados pela categoria do chamado segundo `HELPDESK_SISTEMAS`;
@@ -81,7 +89,11 @@ agrega tudo **sem nenhuma chamada extra à API**:
   urgência do sistema; não há SLA, veja a nota abaixo);
 - `fila.idade` — há quanto tempo os chamados estão abertos;
 - `desenvolvimento` — carga por desenvolvedor (`HELPDESK_DEV_NAMES`) e chamados
-  parados em status de desenvolvimento (`HELPDESK_STATUS_DEV`);
+  parados em status de desenvolvimento (`HELPDESK_STATUS_DEV`). Cada dev traz
+  `total_no_nome` (tudo que está no nome dele, em qualquer status menos Fechado) e
+  `em_trabalho` (soma dos status de `HELPDESK_STATUS_TRABALHO` — hoje
+  `Com o Desenvolvedor` e `Em atendimento`). A diferença entre os dois é o que está
+  parado esperando teste, aprovação, deploy ou retorno do solicitante;
 - `tickets_por_sistema` — lista resumida dos chamados de cada sistema, os de
   abertos há mais tempo primeiro.
 
@@ -90,6 +102,17 @@ agrega tudo **sem nenhuma chamada extra à API**:
 > setembro de 2026 tudo de SLA foi removido do sistema para evitar leitura falsa.
 > A urgência de um chamado é medida por **há quantos dias ele está aberto**, e é
 > isso que decide quais chamados entram nas amostras.
+
+### Testes de layout
+
+```bash
+python testes/test_layout.py
+```
+
+Verifica, nas quatro páginas geradas: todo bloco de seção declara `bloco-fixo` ou
+`bloco-elastico`; toda seção tem quem absorva a sobra; nenhuma grade de card é
+definida fora de `dashboard_base.py`; e nenhuma seção pede mais que duas telas de
+altura no notebook de 1536x639. Rode depois de qualquer mudança de layout.
 
 Para descobrir os valores reais da sua instalação antes de configurar:
 

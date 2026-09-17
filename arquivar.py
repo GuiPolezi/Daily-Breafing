@@ -73,6 +73,13 @@ def metricas_do_dia(email: dict, helpdesk: dict, licencas: dict) -> dict:
         "email_spam": email.get("spam_hoje"),
         # Help desk (fila)
         "fila_abertos": helpdesk.get("fila_total_abertos"),
+        # Mesma fila no recorte de status que valia antes de 17/09/2026 ("tudo
+        # menos Fechado" substituiu uma lista de 6 status). E a serie que segue
+        # comparavel com os dias anteriores; fila_abertos tem um degrau naquele
+        # dia. fila_status_qtd marca a virada: quando muda de um dia para o
+        # outro, os dashboards suprimem o badge de comparacao.
+        "fila_abertos_base_anterior": helpdesk.get("fila_total_base_anterior"),
+        "fila_status_qtd": len(helpdesk.get("status_consultados") or []) or None,
         "meus_abertos": helpdesk.get("meus_abertos"),
         # Fila por sistema (Milldesk, campo category)
         "fila_site": por_sistema.get("Site"),
@@ -98,6 +105,10 @@ def metricas_do_dia(email: dict, helpdesk: dict, licencas: dict) -> dict:
         } or None,
         "dev_por_pessoa": {
             nome: dic(bloco).get("abertos")
+            for nome, bloco in dic(dev.get("por_dev")).items()
+        } or None,
+        "dev_por_pessoa_trabalho": {
+            nome: dic(bloco).get("em_trabalho")
             for nome, bloco in dic(dev.get("por_dev")).items()
         } or None,
         # Produtividade (referente ao último dia útil)

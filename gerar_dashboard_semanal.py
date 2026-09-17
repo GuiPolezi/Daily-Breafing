@@ -48,11 +48,6 @@ FAVO_NAV_SEMANAL = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia
                     (1, -1): "dias", (0, -1): "briefing", (0, 0): "comparacao"}
 
 # Só o que o diário não tem. Nomes novos não colidem com as classes do ranking (.linha, .barra, .valor...).
-CSS_SEMANAL = """
-.pill.atual{background:var(--bom-bg);color:var(--bom)}
-.pill.anterior{background:var(--neutro-bg);color:var(--tinta-2)}
-.tabela-lic .apagado{color:var(--tabela-muted);font-style:italic}
-"""
 
 
 # ----------------------------------------------------------------------------
@@ -272,7 +267,7 @@ def gerar_html() -> str:
 
         secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <div class="grade-destaques">
+  <div class="grade-destaques bloco-elastico">
     {titulo_secao("Destaques da semana", "destaques", ["Destaques", "Da Semana"])}
     {card_largo}{card_fila}{card_periodo}{card_lic}
   </div>
@@ -294,7 +289,7 @@ def gerar_html() -> str:
             curta = len(intro) <= 240 and not re.search(r"^\s*([-*+|#]|\d+[.)])", intro, flags=re.M)
             if curta and len(slides) > 1:
                 # linha de metadado ("Gerado em ...") não merece um slide inteiro: vira nota sob o carrossel
-                nota_rel = f'<p class="nota-escura">{inline_md(" ".join(intro.split()))}</p>'
+                nota_rel = f'<p class="nota-escura bloco-fixo">{inline_md(" ".join(intro.split()))}</p>'
                 slides = slides[1:]
             else:
                 slides[0]["titulo"] = "Visão geral"
@@ -314,8 +309,8 @@ def gerar_html() -> str:
         carimbo_rel = relatorio_em.strftime("%d/%m/%Y %H:%M") if relatorio_em else ""
         secao_briefing = f"""
 <section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca dividida">{titulo_secao("Relatório da Semana", "briefing")}<p class="lado carimbo-briefing">{esc(carimbo_rel)}</p></header>
-  <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos do relatório semanal">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Relatório da Semana", "briefing")}<p class="lado carimbo-briefing">{esc(carimbo_rel)}</p></header>
+  <div class="slider bloco-elastico" aria-roledescription="carrossel" aria-label="Tópicos do relatório semanal">
     <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
     <div class="slider-controles">
       <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
@@ -342,11 +337,11 @@ def gerar_html() -> str:
         fila_ult, fila_ant = ultimos(serie["fila"])
         atend_ult, atend_ant = ultimos(serie["atend"])
         if chart_js is None:
-            graficos = ('<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
+            graficos = ('<p class="vazio bloco-elastico">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
                         'Os dados seguem na seção Dia a dia.</p>')
         else:
             graficos = f"""
-<div class="graficos">
+<div class="grade larga graficos bloco-elastico">
   <article class="card card-grafico" style="--i:0">
     <div class="kpi-cabeca"><h3 class="kpi-rotulo">Fila de chamados abertos</h3></div>
     <div class="kpi-linha"><p class="kpi-numero menor">{num_html(fila_ult)}</p><div class="kpi-juizo">{badge_delta(fila_ult, fila_ant, "vs. registro anterior", melhor="menor")}</div><p class="kpi-legenda">último registro · {esc(label_dia(recorte[-1]["data"]))}</p></div>
@@ -360,7 +355,7 @@ def gerar_html() -> str:
 </div>"""
         secao_evolucao = f"""
 <section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
-  <header class="secao-cabeca dividida">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {JANELA_DIAS} dias · {len(recorte)} registro(s)</p></header>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Evolução", "evolucao")}<p class="lado subtitulo">últimos {JANELA_DIAS} dias · {len(recorte)} registro(s)</p></header>
   {graficos}
 </section>"""
 
@@ -382,11 +377,11 @@ def gerar_html() -> str:
         nota_rank = "" if MOSTRAR_RANKING else " · ranking por técnico desativado"
         secao_eficacia = f"""
 <section class="secao" id="eficacia" data-scroll aria-labelledby="t-eficacia">
-  <header class="secao-cabeca dividida">
+  <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Eficácia", "eficacia")}
     <div class="lado"><div class="kpi-medida" title="{esc(dias_txt)}"><p class="kpi-numero menor">{num_html(atual["atend_soma"])}</p><p class="kpi-legenda">atendimentos fechados em {atual["atend_n"]} dia(s) útil(eis)</p></div></div>
   </header>
-  <article class="card card-ranking" style="--i:0" data-scroll>
+  <article class="card card-ranking bloco-elastico" style="--i:0" data-scroll>
     <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3><p class="kpi-legenda">soma da semana atual · {esc(periodo)}{esc(nota_rank)}</p></div>
     {render_ranking(nomes_rank, valores_rank)}
   </article>
@@ -429,8 +424,8 @@ def gerar_html() -> str:
                  f'anterior {esc(label_dia(anterior["primeira"]))}–{esc(label_dia(anterior["ultima"]))}')
         secao_comparacao = f"""
 <section class="secao" id="comparacao" data-scroll aria-labelledby="t-comparacao">
-  <header class="secao-cabeca dividida">{titulo_secao("Semanas", "comparacao")}<p class="lado subtitulo">{faixa}</p></header>
-  <div class="grade-fontes">{cards_cmp}</div>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Semanas", "comparacao")}<p class="lado subtitulo">{faixa}</p></header>
+  <div class="grade grade-fontes bloco-elastico">{cards_cmp}</div>
 </section>"""
 
     # ================================================================ 6. DIA A DIA
@@ -460,8 +455,8 @@ def gerar_html() -> str:
                    '</div>')
         secao_dias = f"""
 <section class="secao" id="dias" aria-labelledby="t-dias">
-  <header class="secao-cabeca dividida">{titulo_secao("Dia a dia", "dias")}{sintese}</header>
-  <div class="tabela-clara" data-scroll tabindex="0" role="region" aria-label="Tabela de registros diários">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Dia a dia", "dias")}{sintese}</header>
+  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Tabela de registros diários">
     <table class="tabela-lic"><caption class="sr-only">Registros diários dos últimos {JANELA_DIAS} dias, do mais recente ao mais antigo</caption>
       <thead><tr><th scope="col" class="num">Data</th><th scope="col">Semana</th><th scope="col" class="num">Fila</th><th scope="col" class="num">Abertos da equipe</th><th scope="col" class="num">Atendimentos</th><th scope="col">Dia de referência</th><th scope="col" class="num">Vencidas recentes</th><th scope="col" class="num">Vencendo</th></tr></thead>
       <tbody>{''.join(linhas)}</tbody></table>
@@ -508,7 +503,7 @@ def gerar_html() -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Briefing Semanal — {esc(fmt_data(atual["ultima"]) if recorte else agora.strftime("%d/%m/%Y"))}</title>
-<style>{fontes_css}{CSS}{CSS_SEMANAL}</style>
+<style>{fontes_css}{CSS}</style>
 {marcador_anim}
 </head>
 <body>
