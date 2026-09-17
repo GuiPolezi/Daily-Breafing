@@ -1,0 +1,447 @@
+"""Gera dashboard_diretor.html: leitura executiva do dia, para a diretoria.
+
+Le as mesmas fontes do briefing diario (dados/*.json + historico) e o texto de
+relatorio_diretor.md. A diferenca nao e de dados, e de altitude:
+
+  - o diario e operacional: lista chamado por chamado, com id e idade;
+  - este e agregado: volume, divisao por sistema, produtividade de suporte e de
+    desenvolvimento, e para onde a curva esta indo.
+
+Por isso aqui NAO existe tabela de chamado individual. Nomes de tecnico e de
+desenvolvedor aparecem (decisao explicita para esta pagina), respeitando
+DASHBOARD_MOSTRAR_RANKING.
+
+Identidade visual vem de dashboard_base.py. Nunca lanca excecao por dado
+ausente: a secao degrada e o resto da pagina sai.
+
+Configuracao (.env): DASHBOARD_MOSTRAR_RANKING, DASHBOARD_DIAS_GRAFICO,
+DASHBOARD_SISTEMAS_DESTAQUE.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from datetime import date, datetime
+from pathlib import Path
+
+from dashboard_base import (
+    ABELHA_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI,
+    MOSTRAR_RANKING, RAIZ, TRACO_SVG, badge_delta, barras_distribuicao, card_grafico,
+    cards_equipes_dev,
+    carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
+    data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica, favo_svg, fmt_num,
+    grafico, json_inline, label_dia, ler_historico, ler_json, markdown_para_html, nota_secao,
+    num_html, ranking_semanal, redigir_nomes, render_ranking, secao_vazia, serie_historico,
+    serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
+)
+from gerar_dashboard import CAMPO_HISTORICO_SISTEMA, SERIE_SISTEMA, SISTEMAS_DESTAQUE, dic
+
+RELATORIO = RAIZ / "relatorio_diretor.md"
+SAIDA = RAIZ / "dashboard_diretor.html"
+DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
+
+FONTES = [
+    ("email", "E-mail", "email.json"),
+    ("helpdesk", "Help desk", "helpdesk.json"),
+    ("licencas", "Licenças", "licencas.json"),
+]
+
+# Seis seções, as mesmas seis células do favo. Os ids "briefing" e "evolucao"
+# são mantidos porque o JS reaproveitado depende deles (slider e gráficos).
+FAVO_ORDEM_DIR = [
+    ("destaques", "Panorama"), ("briefing", "Leitura"), ("suporte", "Suporte"),
+    ("desenvolvimento", "Desenv."), ("evolucao", "Tendência"), ("fontes", "Fontes"),
+]
+FAVO_NAV_DIR = {(-1, 1): "destaques", (0, -1): "briefing", (-1, 0): "suporte",
+                (1, -1): "desenvolvimento", (1, 0): "evolucao", (0, 0): "fontes"}
+
+CSS_DIRETOR = """
+.painel-exec{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--gap)}
+.card-exec{display:flex;flex-direction:column;justify-content:space-between}
+.card-exec .kpi-numero{font-size:var(--t-num-2)}
+.card-exec .kpi-rotulo{color:var(--oliva)}
+.duas-colunas-secao{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--gap);align-items:start}
+.leitura-exec{font-size:clamp(15px,1.7vh,18px);line-height:1.62}
+.leitura-exec li{margin-bottom:7px}
+"""
+
+
+def ler_relatorio() -> str | None:
+    if not RELATORIO.exists():
+        return None
+    try:
+        texto = RELATORIO.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return texto if texto.strip() else None
+
+
+def card_exec(rotulo: str, valor, origem: str, rodape: str = "", delta: str = "",
+              explicacao: str = "", indice: int = 0) -> str:
+    """Card executivo: um número, o julgamento e a origem. Sem detalhe operacional."""
+    return f"""
+<article class="card kpi card-exec" style="--i:{indice}">
+  <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(rotulo)}</h3>{tag_fonte(origem)}</div>
+  <div>
+    <p class="kpi-numero">{num_html(valor)}</p>
+    {f'<div class="kpi-juizo">{delta}</div>' if delta else ""}
+    {f'<p class="kpi-rodape">{rodape}</p>' if rodape else ""}
+  </div>
+  {explicacao}
+</article>"""
+
+
+def gerar_html() -> str:
+    agora = datetime.now()
+    historico = ler_historico()
+    relatorio = ler_relatorio()
+    chart_js = carregar_chart_js()
+    gsap_js = carregar_gsap()
+    fontes_css = carregar_fontes_css()
+
+    fontes: dict[str, dict] = {}
+    dados: dict[str, dict | None] = {}
+    for chave, rotulo, arquivo in FONTES:
+        d, erro = ler_json(arquivo)
+        dados[chave] = d
+        fontes[chave] = {"rotulo": rotulo, **status_fonte(d, erro, agora)}
+
+    helpdesk, licencas = dados["helpdesk"], dados["licencas"]
+    atend = dic((helpdesk or {}).get("atendimentos_ultimo_dia_util"))
+    fila = dic((helpdesk or {}).get("fila"))
+    por_sistema = dic(fila.get("por_sistema"))
+    idade = dic(fila.get("idade"))
+    por_natureza = dic(fila.get("por_natureza"))
+    dev = dic((helpdesk or {}).get("desenvolvimento"))
+    por_dev = dic(dev.get("por_dev"))
+
+    hoje_iso = date.today().isoformat()
+    anterior: dict = {}
+    if historico:
+        anterior = historico[-2] if historico[-1].get("data") == hoje_iso and len(historico) >= 2 else (
+            historico[-1] if historico[-1].get("data") != hoje_iso else {})
+
+    n_vencidas = len((licencas or {}).get("vencidas_recentes") or [])
+    n_vencendo = len((licencas or {}).get("vencendo_em_breve") or [])
+    nomes_tecnicos = coletar_nomes_tecnicos(historico, helpdesk)
+    rank = ranking_semanal(historico)
+
+    # ============================================================= 1. PANORAMA
+    cartoes = [
+        card_exec("Fila de chamados · total", (helpdesk or {}).get("fila_total_abertos"), "milldesk",
+                  delta=badge_delta((helpdesk or {}).get("fila_total_abertos"), anterior.get("fila_abertos"), melhor="menor"),
+                  explicacao=explica("fila_total"), indice=0),
+        card_exec("Atendimentos fechados", atend.get("total_atendimentos_fechados"), "milldesk",
+                  rodape=f'último dia útil · <b>{esc(atend.get("dia") or "—")}</b>',
+                  delta=badge_delta(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior"),
+                  explicacao=explica("atend_fechados"), indice=1),
+    ]
+    for i, rotulo_sis in enumerate(SISTEMAS_DESTAQUE):
+        campo = CAMPO_HISTORICO_SISTEMA.get(rotulo_sis)
+        valor = por_sistema.get(rotulo_sis)
+        cartoes.append(card_exec(
+            f"Em aberto · {rotulo_sis}", valor, "milldesk",
+            delta=badge_delta(valor, anterior.get(campo) if campo else None, melhor="menor") if valor is not None else "",
+            rodape="" if valor is not None else "recorte por sistema ainda não coletado",
+            explicacao=explica("fila_sistema"), indice=2 + i))
+    cartoes.append(card_exec(
+        "Atribuídos a desenvolvedores", dev.get("total_atribuidos_a_devs"), "milldesk",
+        rodape=f'<b>{fmt_num(dev.get("total_em_status_dev"))}</b> em status de desenvolvimento' if dev else "",
+        delta=badge_delta(dev.get("total_atribuidos_a_devs"), anterior.get("dev_atribuidos"), melhor="menor"),
+        explicacao=explica("dev_atribuidos"), indice=6))
+    cartoes.append(card_exec(
+        "Abertos há mais de 90 dias", idade.get("mais_de_90_dias"), "milldesk",
+        rodape="envelhecimento da fila" if idade else "",
+        delta=badge_delta(idade.get("mais_de_90_dias"), anterior.get("fila_mais_90"), melhor="menor"),
+        explicacao=explica("idade_90"), indice=7))
+    cartoes.append(card_exec(
+        "Licenças vencidas · acionáveis", n_vencidas, "licencas",
+        rodape=f"<b>{fmt_num(n_vencendo)}</b> vencendo em breve",
+        delta=badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), melhor="menor"),
+        explicacao=explica("lic_vencidas"), indice=8))
+
+    secao_destaques = f"""
+<section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
+  <header class="secao-cabeca dividida">
+    {titulo_secao("Panorama do dia", "destaques")}
+    <p class="lado subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>
+  </header>
+  {nota_secao("milldesk", "Volume operacional do dia. Cada card diz sua fonte e como o número é contado; "
+                          "os chamados individuais ficam no briefing operacional, não aqui.")}
+  <div class="painel-exec">{''.join(cartoes)}</div>
+</section>"""
+
+    # ============================================================= 2. LEITURA
+    if relatorio is None:
+        secao_briefing = secao_vazia("briefing", "Leitura do dia",
+                                     "Relatório indisponível (relatorio_diretor.md ausente ou vazio).")
+    else:
+        texto = relatorio if MOSTRAR_RANKING else redigir_nomes(relatorio, nomes_tecnicos)
+        titulo_h1, slides = dividir_briefing(texto)
+        data_brief = data_do_briefing(titulo_h1) or agora.strftime("%d/%m/%Y %H:%M")
+        if not slides:
+            slides = [{"titulo": "Leitura do dia", "md": texto}]
+        itens_slides, pontos = [], []
+        for i, s in enumerate(slides):
+            corpo_md = s["md"]
+            n_itens = len(re.findall(r"^\s*[-*+]\s+", corpo_md, flags=re.M))
+            duas = " duas-colunas" if (n_itens >= 6 or len(corpo_md) > 780) else ""
+            corpo = markdown_para_html(corpo_md, base=4) or "<p>—</p>"
+            itens_slides.append(
+                f'<li class="slide" role="group" aria-roledescription="slide" aria-label="{i + 1} de {len(slides)}: {esc(s["titulo"])}">'
+                f'<article class="card card-slide" data-scroll><h3 class="kpi-rotulo">{esc(s["titulo"])}</h3>'
+                f'<div class="slide-corpo leitura-exec{duas}">{corpo}</div></article></li>')
+            pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
+        secao_briefing = f"""
+<section class="secao" id="briefing" aria-labelledby="t-briefing">
+  <header class="secao-cabeca dividida">{titulo_secao("Leitura do dia", "briefing")}<p class="lado carimbo-briefing">{esc(data_brief)}</p></header>
+  <div class="slider" aria-roledescription="carrossel" aria-label="Tópicos da leitura">
+    <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
+    <div class="slider-controles">
+      <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
+      <div class="indicadores" role="tablist" aria-label="Tópicos">{''.join(pontos)}</div>
+      <button class="seta" type="button" data-dir="1" aria-label="Próximo tópico">›</button>
+    </div>
+  </div>
+</section>"""
+
+    # ============================================================= 3. SUPORTE
+    if MOSTRAR_RANKING and rank["tecnicos"]:
+        titulo_rank, nomes_rank, valores_rank = "Atendimentos por técnico", rank["tecnicos"], rank["valores"]
+    elif rank["dias"]:
+        titulo_rank, nomes_rank, valores_rank = "Atendimentos da equipe por dia", rank["dias"], rank["totais"]
+    else:
+        titulo_rank, nomes_rank, valores_rank = "", [], []
+    if not nomes_rank:
+        secao_suporte = secao_vazia("suporte", "Suporte", "Sem registros de atendimentos no histórico.")
+    else:
+        painel_idade = barras_distribuicao({
+            "Até 7 dias": idade.get("ate_7_dias"), "8 a 30 dias": idade.get("de_8_a_30_dias"),
+            "31 a 90 dias": idade.get("de_31_a_90_dias"), "Mais de 90 dias": idade.get("mais_de_90_dias"),
+        }, limite=4, criticos=("Mais de 90 dias",)) if idade else '<p class="dist-vazio">Sem dados de idade da fila.</p>'
+        secao_suporte = f"""
+<section class="secao" id="suporte" data-scroll aria-labelledby="t-suporte">
+  <header class="secao-cabeca dividida">
+    {titulo_secao("Suporte", "suporte")}
+    <div class="lado"><div class="kpi-medida"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p>
+      <p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
+  </header>
+  {nota_secao("milldesk", "Produtividade do suporte e estado da fila em aberto.")}
+  <div class="duas-colunas-secao">
+    <article class="card card-ranking" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3>{tag_fonte("historico")}</div>
+      {render_ranking(nomes_rank, valores_rank)}
+      {explica("ranking")}
+    </article>
+    <article class="card" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Idade dos chamados na fila</h3>{tag_fonte("milldesk")}</div>
+      {painel_idade}
+      {explica("idade_fila")}
+    </article>
+  </div>
+</section>"""
+
+    # ============================================================= 4. DESENVOLVIMENTO
+    if not dev:
+        secao_dev = secao_vazia("desenvolvimento", "Desenvolvimento",
+                                "Bloco de desenvolvimento ainda não coletado "
+                                "(campo desenvolvimento em dados/helpdesk.json).")
+    elif not por_dev and not dev.get("total_em_status_dev"):
+        secao_dev = secao_vazia("desenvolvimento", "Desenvolvimento",
+                                "Nenhum desenvolvedor configurado em HELPDESK_DEV_NAMES.")
+    else:
+        carga = {}
+        for i, (nome, bloco) in enumerate(por_dev.items()):
+            rotulo = nome if MOSTRAR_RANKING else f"Desenvolvedor {i + 1}"
+            carga[rotulo] = dic(bloco).get("abertos")
+        secao_dev = f"""
+<section class="secao" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
+  <header class="secao-cabeca dividida">
+    {titulo_secao("Desenvolvimento", "desenvolvimento")}
+    <div class="lado">
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">atribuídos a desenvolvedores</p></div>
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">em status de desenvolvimento</p></div>
+    </div>
+  </header>
+  {nota_secao("milldesk", "Dois recortes da mesma fila: chamados com um desenvolvedor como responsável, "
+                          "e chamados parados em status de desenvolvimento (com dono ou sem).")}
+  {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
+  {explica("dev_equipe")}
+  <div class="duas-colunas-secao">
+    <article class="card" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Carga por desenvolvedor</h3>{tag_fonte("milldesk")}</div>
+      {barras_distribuicao(carga, limite=10)}
+      {explica("dev_atribuidos")}
+    </article>
+    <article class="card" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por sistema</h3>{tag_fonte("milldesk")}</div>
+      {barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=8)}
+      {explica("fila_sistema")}
+    </article>
+    <article class="card" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por status</h3>{tag_fonte("milldesk")}</div>
+      {barras_distribuicao(dic(dev.get("em_status_dev_por_status")), limite=8)}
+      {explica("dev_status")}
+    </article>
+    <article class="card" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Corretivo x evolutivo · fila inteira</h3>{tag_fonte("milldesk")}</div>
+      {barras_distribuicao(por_natureza, limite=6, criticos=("Corretivo",))}
+      {explica("natureza")}
+    </article>
+  </div>
+</section>"""
+
+    # ============================================================= 5. TENDÊNCIA
+    serie = serie_historico(historico, DIAS_GRAFICO)
+    n_dias = len(serie["labels"])
+    graficos_payload: list[dict] = []
+    if not n_dias:
+        secao_evolucao = secao_vazia("evolucao", "Tendência", "Histórico indisponível (historico/metricas.jsonl vazio ou ausente).")
+    else:
+        candidatos = [
+            ("fila", "chartFila", "Fila de chamados abertos", "azul", "menor"),
+            ("atend", "chartAtend", "Atendimentos fechados por dia", "rubro", "maior"),
+            ("dev", "chartDev", "Atribuídos a desenvolvedores", "verde", "menor"),
+            ("corretivo", "chartCorretivo", "Fila corretiva (bugs e falhas)", "rubro", "menor"),
+            ("evolutivo", "chartEvolutivo", "Fila evolutiva (melhorias)", "verde", "maior"),
+            ("idade_90", "chartIdade90", "Abertos há mais de 90 dias", "rubro", "menor"),
+            ("lic_vencidas", "chartLic", "Licenças vencidas recentes", "mel", "menor"),
+        ]
+        for rotulo_sis in SISTEMAS_DESTAQUE:
+            chave = SERIE_SISTEMA.get(rotulo_sis)
+            if chave:
+                candidatos.insert(2, (chave, f"chart{chave.title()}", f"Fila · {rotulo_sis}", "oliva", "menor"))
+        cartoes_g = []
+        for chave, id_canvas, titulo, cor, melhor in candidatos:
+            if not serie_tem_dado(serie, chave):
+                continue
+            graficos_payload.append(grafico(id_canvas, titulo, serie[chave], cor=cor))
+            valores = [v for v in serie[chave] if v is not None]
+            ult, ant = (valores[-1] if valores else None), (valores[-2] if len(valores) > 1 else None)
+            topo = (f'<div class="kpi-linha"><p class="kpi-numero menor">{num_html(ult)}</p>'
+                    f'<div class="kpi-juizo">{badge_delta(ult, ant, "vs. registro anterior", melhor=melhor)}</div></div>')
+            cartoes_g.append(card_grafico(id_canvas, titulo, f"Tendência: {titulo}", topo))
+        if chart_js is None:
+            corpo = '<p class="vazio">Gráficos indisponíveis nesta geração (biblioteca não encontrada).</p>'
+            graficos_payload = []
+        elif not cartoes_g:
+            corpo = '<p class="vazio">Ainda não há série suficiente para desenhar gráficos.</p>'
+        else:
+            corpo = f'<div class="graficos quatro">{"".join(cartoes_g)}</div>'
+        secao_evolucao = f"""
+<section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
+  <header class="secao-cabeca dividida">{titulo_secao("Tendência", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
+  {nota_secao("historico", "Série de historico/metricas.jsonl, uma linha por dia. Dias sem coleta não aparecem; "
+                           "métricas novas só existem a partir do dia em que passaram a ser gravadas.")}
+  {corpo}
+</section>"""
+
+    # ============================================================= 6. FONTES
+    rotulo_estado = {"ok": "Atualizada", "desatualizada": "Desatualizada", "indisponivel": "Indisponível"}
+    classe_estado = {"ok": "ok", "desatualizada": "aviso", "indisponivel": "grave"}
+    origem_da_fonte = {"email": "imap", "helpdesk": "milldesk", "licencas": "licencas"}
+    from dashboard_base import FONTES_INFO
+    cards_fontes = []
+    for i, (chave, f) in enumerate(fontes.items()):
+        estado = f["estado"]
+        dt = f["coletado_em"]
+        origem = origem_da_fonte.get(chave, "")
+        cards_fontes.append(f"""
+<article class="card card-fonte kpi" style="--i:{i}">
+  <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(f["rotulo"])}</h3><span class="kpi-fonte {classe_estado[estado]}">{rotulo_estado[estado]}</span></div>
+  <p class="kpi-numero menor">{esc(dt.strftime("%H:%M")) if dt else '<span class="sem-dado">—</span>'}</p>
+  <p class="kpi-legenda">coletado em {esc(dt.strftime("%d/%m/%Y")) if dt else "—"}</p>
+  <p class="kpi-explica">{tag_fonte(origem) if origem else ""} {esc(FONTES_INFO.get(origem, ("", "", ""))[2])}</p>
+</article>""")
+    secao_fontes = f"""
+<section class="secao" id="fontes" data-scroll aria-labelledby="t-fontes">
+  <header class="secao-cabeca dividida">{titulo_secao("Fontes", "fontes")}<p class="lado subtitulo">{sum(1 for f in fontes.values() if f["estado"] == "ok")} de {len(fontes)} atualizadas</p></header>
+  <div class="grade-fontes">{''.join(cards_fontes)}</div>
+  <p class="nota-escura">Coleta somente leitura, uma vez por dia. Arquivo estático, sem dependências externas.</p>
+</section>"""
+
+    # ============================================================= cabeçalho
+    gerado_em = agora.strftime("%d/%m/%Y %H:%M")
+    data_dados = date.today().strftime("%d/%m/%Y")
+    desatualizadas = [f["rotulo"] for f in fontes.values() if f["estado"] == "desatualizada"]
+    indisponiveis = [f["rotulo"] for f in fontes.values() if f["estado"] == "indisponivel"]
+    avisos = ""
+    if desatualizadas:
+        avisos += f'<a class="aviso" href="#fontes" data-alvo="fontes">{len(desatualizadas)} fonte(s) desatualizada(s)</a>'
+    if indisponiveis:
+        avisos += f'<a class="aviso grave" href="#fontes" data-alvo="fontes">{len(indisponiveis)} fonte(s) indisponível(is)</a>'
+
+    favo_cheio, _ = favo_svg(FAVO_CHEIO, passo=63, fonte=12, classe="favo-cheio", nav=FAVO_NAV_DIR, ordem=FAVO_ORDEM_DIR)
+    favo_compacto, _ = favo_svg(FAVO_COMPACTO, passo=66, fonte=12, classe="favo-compacto", nav=FAVO_NAV_DIR, ordem=FAVO_ORDEM_DIR)
+    menu_simples = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in FAVO_ORDEM_DIR)
+
+    payload = {"labels": serie["labels"], "secao": "evolucao", "graficos": graficos_payload}
+    script = f"<script>{JS_UI}</script>"
+    if gsap_js is not None:
+        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER}</script>"
+    marcador_anim = (
+        '<script>(function(){try{if(!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches))'
+        'document.documentElement.classList.add("anim")}catch(e){}})();</script>'
+    ) if gsap_js is not None else ""
+    if chart_js is not None and graficos_payload:
+        script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload))}</script>"
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Briefing Diretoria — {esc(data_dados)}</title>
+<style>{fontes_css}{CSS}{CSS_DIRETOR}</style>
+{marcador_anim}
+</head>
+<body>
+<a class="pular" href="#destaques">Ir para o conteúdo</a>
+<div class="palco">
+<header class="topo">
+  <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Briefing Diretoria — início">
+    {ABELHA_SVG}
+    <h1 class="wordmark"><span class="w" style="--traco-w:46%">Briefing{TRACO_SVG}</span><span class="w">Diretoria{TRACO_SVG}</span></h1>
+  </a>
+  <nav class="favo" aria-label="Seções do painel">
+    {favo_cheio}
+    {favo_compacto}
+    <div class="menu-simples">{menu_simples}</div>
+  </nav>
+</header>
+<p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{avisos}</p>
+<main class="colmeia" id="colmeia">
+{secao_destaques}
+{secao_briefing}
+{secao_suporte}
+{secao_dev}
+{secao_evolucao}
+{secao_fontes}
+</main>
+</div>
+{script}
+</body>
+</html>
+"""
+
+
+def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    try:
+        conteudo = gerar_html()
+    except Exception as e:  # último recurso: nunca deixar a diretoria sem página
+        print(f"ERRO ao montar dashboard da diretoria: {type(e).__name__}: {e}")
+        conteudo = (
+            "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'><title>Briefing Diretoria</title></head>"
+            f"<body><h1>Briefing Diretoria</h1><p>Falha ao gerar o painel: {esc(type(e).__name__)}</p></body></html>")
+    SAIDA.write_text(conteudo, encoding="utf-8")
+    print(f"OK -> {SAIDA} ({len(conteudo.encode('utf-8')) // 1024} KB, ranking={'on' if MOSTRAR_RANKING else 'off'})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

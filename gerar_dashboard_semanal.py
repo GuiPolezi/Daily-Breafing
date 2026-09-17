@@ -3,7 +3,7 @@
 Lê historico/metricas.jsonl e relatorio_semanal.md (não lê dados/ nem chama
 nenhuma API) e escreve um único HTML com o mesmo visual "favo de mel" do
 dashboard diário. CSS, JS, favo, abelha, conversor de markdown e helpers são
-importados de gerar_dashboard.py: mudou o design lá, muda aqui também. Nunca
+importados de dashboard_base.py: mudou o design lá, muda aqui também. Nunca
 lança exceção por dado ausente: cada seção degrada e o restante é gerado.
 
 Regras do recorte (as mesmas do prompt em briefing_semanal.bat):
@@ -23,9 +23,9 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from gerar_dashboard import (
+from dashboard_base import (
     ABELHA_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI, MOSTRAR_RANKING, TRACO_SVG,
-    badge_delta, carregar_chart_js, carregar_fontes_css, carregar_gsap, coletar_nomes_tecnicos,
+    badge_delta, carregar_chart_js, carregar_fontes_css, grafico, carregar_gsap, coletar_nomes_tecnicos,
     dividir_briefing, esc, favo_svg, fmt_num, inline_md, json_inline, label_dia, ler_historico, markdown_para_html,
     num_html, redigir_nomes, render_ranking, secao_vazia, titulo_secao,
 )
@@ -492,7 +492,15 @@ def gerar_html() -> str:
         'document.documentElement.classList.add("anim")}catch(e){}})();</script>'
     ) if gsap_js is not None else ""
     if chart_js is not None and recorte:
-        script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(serie))}</script>"
+        payload_graficos = {
+            "labels": serie.get("labels") or [],
+            "secao": "evolucao",
+            "graficos": [
+                grafico("chartFila", "Fila de chamados", serie.get("fila") or [], cor="azul"),
+                grafico("chartAtend", "Atendimentos fechados", serie.get("atend") or [], cor="rubro"),
+            ],
+        }
+        script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload_graficos))}</script>"
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">

@@ -68,7 +68,46 @@ Alternativas: Agendador de Tarefas do Windows, GitHub Actions (schedule),
 ou systemd timer. O resultado pode ser enviado para você por e-mail,
 Telegram ou Slack — veja o final do `briefing.sh`.
 
+## O que o coletor do help desk extrai
+
+O Milldesk devolve 42 campos por chamado. O coletor baixa a fila inteira e
+agrega tudo **sem nenhuma chamada extra à API**:
+
+- `fila.por_sistema` — chamados por sistema (Site, Siscam 9, Siscam 8...),
+  classificados pela categoria do chamado segundo `HELPDESK_SISTEMAS`;
+- `fila.por_status`, `por_tecnico`, `por_categoria`, `por_subcategoria`,
+  `por_departamento`, `por_prioridade`, `por_urgencia`, `por_tipo`;
+- `fila.idade` — há quanto tempo os chamados estão abertos (é a medida de
+  urgência do sistema; não há SLA, veja a nota abaixo);
+- `fila.idade` — há quanto tempo os chamados estão abertos;
+- `desenvolvimento` — carga por desenvolvedor (`HELPDESK_DEV_NAMES`) e chamados
+  parados em status de desenvolvimento (`HELPDESK_STATUS_DEV`);
+- `tickets_por_sistema` — lista resumida dos chamados de cada sistema, os de
+  abertos há mais tempo primeiro.
+
+> **Não há informação de SLA.** O Milldesk devolve `slasexpirationdate`, mas o
+> prazo não estava definido corretamente na origem — os números eram errados. Em
+> setembro de 2026 tudo de SLA foi removido do sistema para evitar leitura falsa.
+> A urgência de um chamado é medida por **há quantos dias ele está aberto**, e é
+> isso que decide quais chamados entram nas amostras.
+
+Para descobrir os valores reais da sua instalação antes de configurar:
+
+```bash
+python coletores/check_helpdesk.py --listar-categorias
+```
+
+Ele imprime categorias, subcategorias, departamentos, grupos, técnicos, status e
+tipos que existem hoje na fila, mais como o mapa atual de `HELPDESK_SISTEMAS`
+está classificando cada um — inclusive o que caiu em "Outros".
+
 ## Dashboard HTML e notificação (Windows)
+
+> `dashboard_base.py` guarda o que os dashboards têm em comum: identidade visual
+> (CSS, JS, favo, fontes), leitura tolerante a falhas de `dados/` e do histórico,
+> conversor de markdown e os componentes de render. Todos os geradores importam
+> dele — mudou o design lá, mudou em todos; rode todos os geradores depois.
+
 
 Ao final do `briefing.bat`, além do `relatorio.md`, são executados:
 
@@ -110,6 +149,49 @@ DASHBOARD_DIAS_GRAFICO=30        # dias do histórico exibidos nos gráficos
 
 Para gerar o dashboard manualmente: `python gerar_dashboard.py`.
 
+## Briefing da diretoria e do financeiro (Windows)
+
+Os dois rodam **todo dia**, logo depois do briefing diário, e **não executam
+coletores**: reaproveitam os JSONs que `briefing.bat` já coletou naquela manhã.
+O Milldesk e o IMAP continuam sendo acessados uma vez por dia.
+
+`briefing.bat` chama os dois no final com o argumento `sem-abrir` (para não
+abrir três abas). Rodando um deles sozinho, o navegador abre normalmente:
+
+```bash
+briefing_diretor.bat        # relatorio_diretor.md + dashboard_diretor.html
+briefing_financeiro.bat     # relatorio_financeiro.md + dashboard_financeiro.html
+```
+
+### Diretoria — `dashboard_diretor.html`
+
+Mesmas fontes do diário, outra altitude: volume, divisão e tendência, **sem
+chamado individual**. Seções: Panorama (fila total, atendimentos, fila por
+sistema, carga de desenvolvimento, chamados há mais de 90 dias, licenças), Leitura do dia
+(texto do `claude -p`), Suporte (ranking por técnico + idade da fila),
+Desenvolvimento (carga por dev, por sistema, por status) e Tendência (gráficos
+do histórico). Nomes de técnico aparecem, respeitando `DASHBOARD_MOSTRAR_RANKING`.
+
+### Financeiro — `dashboard_financeiro.html`
+
+Fonte única: o sistema interno de licenças. **Nenhum dado de help desk e nenhum
+nome de pessoa** — a página lê `helpdesk.json` apenas para saber quais nomes
+apagar do texto, e a redação é feita no código, não confiada ao prompt.
+
+Seções: Panorama (por faixa de prazo), Relatório, Radar (tabela completa +
+distribuição por sistema e por cliente), **Mudanças** e Evolução.
+
+"Mudanças" compara os dois retratos mais recentes de `historico/licencas.jsonl`
+e responde o que **renovou** (mesma dupla cliente+sistema com vencimento
+adiado), o que **venceu**, o que **entrou** e o que **saiu** da lista. Precisa
+de pelo menos dois dias de histórico; com menos, a seção explica isso em vez de
+inventar. Note que "saiu da lista" pode ser renovação longa ou remoção no
+sistema de origem — a fonte não diz qual, e a página não afirma.
+
+> **Limite conhecido:** a fonte expõe apenas cliente, sistema e vencimento. Não
+> há valor, contrato nem responsável. Este painel é um radar de renovação, não
+> um painel de receita.
+
 ## Briefing e dashboard semanal (Windows)
 
 `briefing_semanal.bat` não roda coletores: o Claude lê só `historico/metricas.jsonl`
@@ -117,7 +199,7 @@ e escreve `relatorio_semanal.md`. Em seguida:
 
 1. `gerar_dashboard_semanal.py` gera `dashboard_semanal.html`, com o mesmo visual,
    a mesma navegação e o mesmo comportamento offline do dashboard diário (importa
-   CSS, JS e o favo de `gerar_dashboard.py`). Seções: Destaques da semana,
+   CSS, JS e o favo de `dashboard_base.py`). Seções: Destaques da semana,
    Relatório (tópicos do `relatorio_semanal.md` em slider), Evolução (gráficos dos
    últimos 12 dias), Eficácia (ranking da semana), Semanas (atual contra a
    anterior) e Dia a dia (tabela dos registros).

@@ -10,3 +10,9 @@ historico/
 dashboard.html
 CLAUDE.md
 dashboard_semanal.html
+relatorio_diretor.md
+relatorio_financeiro.md
+dashboard_diretor.html
+dashboard_financeiro.html
+# scripts temporarios que o claude -p headless cria para inspecionar JSON
+_tmp_*.py
