@@ -26,15 +26,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    ABELHA_SVG, AVISO_BASE_MUDOU, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI,
-    MOSTRAR_RANKING, RAIZ, TRACO_SVG, badge_delta, barras_distribuicao,
-    base_status_comparavel, card_grafico,
+    AVISO_BASE_MUDOU, CSS, CSS_SINO, JS_CHARTS, JS_HEADER_SINO, JS_UI,
+    MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
+    base_status_comparavel, card_grafico, card_sino,
     cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
-    data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica, favo_svg, fmt_num,
-    grafico, json_inline, label_dia, ler_historico, ler_json, markdown_para_html, nota_secao,
+    data_do_briefing, dividir_briefing, esc, explica, fmt_num,
+    grafico, grupo_fonte, json_inline, ler_historico, ler_json, logo_sino, markdown_para_html,
+    menu_grade, nota_secao,
     num_html, ranking_semanal, redigir_nomes, render_ranking, secao_vazia, serie_historico,
-    serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
+    serie_tem_dado, seta_delta, status_fonte, tag_fonte, titulo_secao,
 )
 from gerar_dashboard import CAMPO_HISTORICO_SISTEMA, SERIE_SISTEMA, SISTEMAS_DESTAQUE, dic
 
@@ -48,18 +49,25 @@ FONTES = [
     ("licencas", "Licenças", "licencas.json"),
 ]
 
-# Seis seções, as mesmas seis células do favo. Os ids "briefing" e "evolucao"
-# são mantidos porque o JS reaproveitado depende deles (slider e gráficos).
-FAVO_ORDEM_DIR = [
+# Menu em blocos (tema SINO): seis, em duas linhas de três, como no mockup.
+# "fontes" NAO entra no menu (decisão do Guilherme, 21/09/2026): a seção
+# continua existindo e continua alcançável pela roda do mouse, pelo teclado e
+# pelo link "fonte desatualizada" do carimbo -- ela só não ocupa um bloco.
+# Os ids "briefing" e "evolucao" são mantidos porque o JS reaproveitado depende
+# deles (slider e gráficos).
+MENU_ORDEM = [
     ("destaques", "Panorama"), ("briefing", "Leitura"), ("suporte", "Suporte"),
     ("desenvolvimento", "Desenv."), ("desenv-analise", "Análise"),
-    ("evolucao", "Tendência"), ("fontes", "Fontes"),
+    ("evolucao", "Tendência"),
 ]
-# (2,-1) estava livre em FAVO_COMPACTO e FAVO_CHEIO -- a divisão da seção
-# Desenvolvimento em duas coube no favo sem redesenhar o menu.
-FAVO_NAV_DIR = {(-1, 1): "destaques", (0, -1): "briefing", (-1, 0): "suporte",
-                (1, -1): "desenvolvimento", (2, -1): "desenv-analise",
-                (1, 0): "evolucao", (0, 0): "fontes"}
+
+# Rótulos curtos do mockup para os sistemas em destaque. Sistema fora do mapa
+# cai no formato genérico -- DASHBOARD_SISTEMAS_DESTAQUE é configurável.
+ROTULO_SISTEMA = {
+    "Site": "Tickets Site - Aberto",
+    "Siscam 9": "Tickets Sis. 9 - Aberto",
+    "Siscam 8": "Tickets Sis. 8 - Aberto",
+}
 
 
 
@@ -71,21 +79,6 @@ def ler_relatorio() -> str | None:
     except (OSError, UnicodeDecodeError):
         return None
     return texto if texto.strip() else None
-
-
-def card_exec(rotulo: str, valor, origem: str, rodape: str = "", delta: str = "",
-              explicacao: str = "", indice: int = 0) -> str:
-    """Card executivo: um número, o julgamento e a origem. Sem detalhe operacional."""
-    return f"""
-<article class="card kpi card-exec" style="--i:{indice}">
-  <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(rotulo)}</h3>{tag_fonte(origem)}</div>
-  <div>
-    <p class="kpi-numero">{num_html(valor)}</p>
-    {f'<div class="kpi-juizo">{delta}</div>' if delta else ""}
-    {f'<p class="kpi-rodape">{rodape}</p>' if rodape else ""}
-  </div>
-  {explicacao}
-</article>"""
 
 
 def gerar_html() -> str:
@@ -143,49 +136,71 @@ def gerar_html() -> str:
     rank = ranking_semanal(historico)
 
     # ============================================================= 1. PANORAMA
+    # Dois grupos, cada um aberto por uma faixa que declara a fonte (grupo_fonte):
+    # é ela que diz de onde vêm os números dos cards abaixo, no lugar da etiqueta
+    # que antes se repetia dentro de cada card.
+    def par(atual, chave_ou_valor, melhor: str, do_historico: bool = False):
+        """(seta, badge) de um card. Um único valor anterior alimenta os dois."""
+        ant = anterior.get(chave_ou_valor) if do_historico else valor_anterior(chave_ou_valor)
+        return (seta_delta(atual, ant, melhor=melhor),
+                badge_delta(atual, ant, melhor=melhor))
+
+    v_atend = atend.get("total_atendimentos_fechados")
+    s_atend, b_atend = par(v_atend, "atend_total", "maior", do_historico=True)
+    v_fila = (helpdesk or {}).get("fila_total_abertos")
+    s_fila, b_fila = par(v_fila, "fila_abertos", "menor")
+
     cartoes = [
-        card_exec("Fila de chamados · total", (helpdesk or {}).get("fila_total_abertos"), "milldesk",
-                  delta=badge_delta((helpdesk or {}).get("fila_total_abertos"), valor_anterior("fila_abertos"), melhor="menor"),
-                  explicacao=explica("fila_total"), indice=0),
-        card_exec("Atendimentos fechados", atend.get("total_atendimentos_fechados"), "milldesk",
-                  rodape=f'último dia útil · <b>{esc(atend.get("dia") or "—")}</b>',
-                  delta=badge_delta(atend.get("total_atendimentos_fechados"), anterior.get("atend_total"), melhor="maior"),
-                  explicacao=explica("atend_fechados"), indice=1),
+        card_sino("Atendimentos Fechados", v_atend, sub="Equipe Suporte",
+                  seta=s_atend, delta=b_atend,
+                  rodape=f'último dia útil: <b>{esc(atend.get("dia") or "—")}</b>',
+                  explicacao=explica("atend_fechados"), indice=0),
+        card_sino("Total de Tickets na Fila", v_fila, seta=s_fila, delta=b_fila,
+                  explicacao=explica("fila_total"), indice=1),
     ]
     for i, rotulo_sis in enumerate(SISTEMAS_DESTAQUE):
-        campo = CAMPO_HISTORICO_SISTEMA.get(rotulo_sis)
         valor = por_sistema.get(rotulo_sis)
-        cartoes.append(card_exec(
-            f"Em aberto · {rotulo_sis}", valor, "milldesk",
-            delta=badge_delta(valor, valor_anterior(campo), melhor="menor") if valor is not None else "",
+        seta_s, badge_s = par(valor, CAMPO_HISTORICO_SISTEMA.get(rotulo_sis), "menor")
+        cartoes.append(card_sino(
+            ROTULO_SISTEMA.get(rotulo_sis, f"Tickets {rotulo_sis} - Aberto"), valor,
+            seta=seta_s if valor is not None else "",
+            delta=badge_s if valor is not None else "",
             rodape="" if valor is not None else "recorte por sistema ainda não coletado",
             explicacao=explica("fila_sistema"), indice=2 + i))
-    cartoes.append(card_exec(
-        "Atribuídos a desenvolvedores", dev.get("total_atribuidos_a_devs"), "milldesk",
+
+    v_dev = dev.get("total_atribuidos_a_devs")
+    s_dev, b_dev = par(v_dev, "dev_atribuidos", "menor")
+    cartoes.append(card_sino(
+        "Tickets com Devs.", v_dev, seta=s_dev, delta=b_dev,
         rodape=f'<b>{fmt_num(dev.get("total_em_status_dev"))}</b> em status de desenvolvimento' if dev else "",
-        delta=badge_delta(dev.get("total_atribuidos_a_devs"), valor_anterior("dev_atribuidos"), melhor="menor"),
-        explicacao=explica("dev_atribuidos"), indice=6))
-    cartoes.append(card_exec(
-        "Abertos há mais de 90 dias", idade.get("mais_de_90_dias"), "milldesk",
+        explicacao=explica("dev_atribuidos"), indice=2 + len(SISTEMAS_DESTAQUE)))
+
+    v_90 = idade.get("mais_de_90_dias")
+    s_90, b_90 = par(v_90, "fila_mais_90", "menor")
+    cartoes.append(card_sino(
+        "Em aberto +90 dias", v_90, seta=s_90, delta=b_90,
         rodape="envelhecimento da fila" if idade else "",
-        delta=badge_delta(idade.get("mais_de_90_dias"), valor_anterior("fila_mais_90"), melhor="menor"),
-        explicacao=explica("idade_90"), indice=7))
-    cartoes.append(card_exec(
-        "Licenças vencidas · acionáveis", n_vencidas, "licencas",
+        explicacao=explica("idade_90"), indice=3 + len(SISTEMAS_DESTAQUE)))
+
+    s_lic, b_lic = par(n_vencidas, "lic_vencidas_recentes", "menor", do_historico=True)
+    card_licenca = card_sino(
+        "Licenças Vencidas", n_vencidas, seta=s_lic, delta=b_lic,
         rodape=f"<b>{fmt_num(n_vencendo)}</b> vencendo em breve",
-        delta=badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), melhor="menor"),
-        explicacao=explica("lic_vencidas"), indice=8))
+        explicacao=explica("lic_vencidas"), indice=0)
 
     secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <header class="secao-cabeca dividida bloco-fixo">
-    {titulo_secao("Panorama do dia", "destaques")}
-    <p class="lado subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>
+  <header class="secao-cabeca empilhada bloco-fixo">
+    {titulo_secao("Panorama do Dia", "destaques")}
+    <p class="subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>
   </header>
   {aviso_base}
-  {nota_secao("milldesk", "Volume operacional do dia. Cada card diz sua fonte e como o número é contado; "
-                          "os chamados individuais ficam no briefing operacional, não aqui.")}
+  {grupo_fonte("milldesk", "Volume operacional do dia. Cada card diz o que é e como o número é "
+                           "contado; os chamados individuais ficam no briefing operacional, não aqui.",
+               rotulo="Milldesk")}
   <div class="grade painel-exec bloco-elastico">{''.join(cartoes)}</div>
+  {grupo_fonte("licencas", "Licenças de produção, sem homologação e sem teste.", rotulo="Licenças")}
+  <div class="grade painel-exec bloco-elastico">{card_licenca}</div>
 </section>"""
 
     # ============================================================= 2. LEITURA
@@ -430,14 +445,13 @@ def gerar_html() -> str:
     if indisponiveis:
         avisos += f'<a class="aviso grave" href="#fontes" data-alvo="fontes">{len(indisponiveis)} fonte(s) indisponível(is)</a>'
 
-    favo_cheio, _ = favo_svg(FAVO_CHEIO, passo=63, fonte=12, classe="favo-cheio", nav=FAVO_NAV_DIR, ordem=FAVO_ORDEM_DIR)
-    favo_compacto, _ = favo_svg(FAVO_COMPACTO, passo=66, fonte=12, classe="favo-compacto", nav=FAVO_NAV_DIR, ordem=FAVO_ORDEM_DIR)
-    menu_simples = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in FAVO_ORDEM_DIR)
+    marca_html = logo_sino(alvo="destaques", titulo="SINO Gestão")
+    menu_html = menu_grade(MENU_ORDEM, colunas=3)
 
     payload = {"labels": serie["labels"], "secao": "evolucao", "graficos": graficos_payload}
     script = f"<script>{JS_UI}</script>"
     if gsap_js is not None:
-        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER}</script>"
+        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER_SINO}</script>"
     marcador_anim = (
         '<script>(function(){try{if(!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches))'
         'document.documentElement.classList.add("anim")}catch(e){}})();</script>'
@@ -450,23 +464,16 @@ def gerar_html() -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Briefing Diretoria — {esc(data_dados)}</title>
-<style>{fontes_css}{CSS}</style>
+<title>SINO Gestão — Diretoria — {esc(data_dados)}</title>
+<style>{fontes_css}{CSS}{CSS_SINO}</style>
 {marcador_anim}
 </head>
 <body>
 <a class="pular" href="#destaques">Ir para o conteúdo</a>
 <div class="palco">
 <header class="topo">
-  <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Briefing Diretoria — início">
-    {ABELHA_SVG}
-    <h1 class="wordmark"><span class="w" style="--traco-w:46%">Briefing{TRACO_SVG}</span><span class="w">Diretoria{TRACO_SVG}</span></h1>
-  </a>
-  <nav class="favo" aria-label="Seções do painel">
-    {favo_cheio}
-    {favo_compacto}
-    <div class="menu-simples">{menu_simples}</div>
-  </nav>
+  {marca_html}
+  {menu_html}
 </header>
 <p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{avisos}</p>
 <main class="colmeia" id="colmeia">

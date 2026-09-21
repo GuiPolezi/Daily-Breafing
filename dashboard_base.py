@@ -2159,3 +2159,371 @@ def grafico(id_canvas: str, rotulo: str, dados: list, tipo: str = "area",
     if labels is not None:
         d["labels"] = labels
     return d
+
+
+# =============================================================================
+# TEMA SINO -- usado APENAS por gerar_dashboard_diretor.py
+# =============================================================================
+# Camada aplicada DEPOIS de CSS, no mesmo <style>: as variaveis de paleta sao
+# redefinidas e os componentes novos (marca SINO, menu em blocos, faixa de
+# grupo, card centralizado) sao acrescentados. Nada aqui renomeia, altera ou
+# apaga o que ja existe -- por isso o diario, o financeiro e o semanal seguem
+# no tema mel/favo sem tocar em uma linha.
+#
+# Paleta (definida pelo Guilherme, 21/09/2026):
+#   #0C6E47 verde principal (painel, menu, rotulos)
+#   #09512F verde escuro   (texto sobre ouro, carimbo, degrade do losango)
+#   #F6C445 ouro           (data do painel, bloco de menu ativo)
+#   #F5FAF7 gelo           (fundo da pagina, vazado do losango)
+#   #0F1E16 carvao         (texto dentro do card)
+
+# Losango da marca: quadrado arredondado girado 45 graus, vazado no centro.
+# Um path so, com fill-rule evenodd -- o vazado deixa o fundo da pagina passar,
+# entao ele funciona sobre qualquer superficie.
+LOSANGO_SVG = """<svg class="sino-losango-svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+<defs><linearGradient id="sino-grad" x1="0" y1="0" x2=".85" y2="1">
+<stop offset="0" stop-color="#0C6E47"/><stop offset="1" stop-color="#09512F"/></linearGradient></defs>
+<g transform="rotate(45 50 50)"><path fill="url(#sino-grad)" fill-rule="evenodd" d="M32 17h36a15 15 0 0 1 15 15v36a15 15 0 0 1-15 15H32a15 15 0 0 1-15-15V32a15 15 0 0 1 15-15Zm12 20h12a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7H44a7 7 0 0 1-7-7V44a7 7 0 0 1 7-7Z"/></g>
+</svg>"""
+
+
+def logo_sino(alvo: str = "destaques", titulo: str = "SINO Gestão") -> str:
+    """Marca do tema SINO: losango + "SINO", com o espaço do "Gestão" reservado.
+
+    O espaço do subtítulo existe no layout desde o primeiro quadro (altura fixa,
+    opacidade zero). É o que garante que a animação de hover não empurre nada:
+    o losango e o "Gestão" animam DENTRO de caixas que nunca mudam de tamanho.
+    """
+    return f"""
+<a class="marca marca-sino" href="#{esc(alvo)}" data-alvo="{esc(alvo)}" aria-label="{esc(titulo)} — início">
+  <span class="sino-logo">{LOSANGO_SVG}</span>
+  <span class="sino-texto">
+    <span class="sino-nome">SINO</span>
+    <span class="sino-sub"><span class="sino-sub-txt">Gestão</span></span>
+  </span>
+</a>"""
+
+
+def menu_grade(ordem: list[tuple[str, str]], colunas: int = 3) -> str:
+    """Menu em blocos arredondados (grade). Cada bloco é um [data-alvo], então o
+    JS_UI já cuida do estado ativo -- nenhum JS novo para navegar.
+
+    A classe .grid-item é a do Staggered Grid Reveal (gsapify); .grid é o
+    contêiner que a animação referencia.
+    """
+    itens = "".join(
+        f'<a class="grid-item" href="#{esc(id_)}" data-alvo="{esc(id_)}">{esc(rotulo)}</a>'
+        for id_, rotulo in ordem)
+    # O CSS ja traz 3 colunas literais. Só escrevemos estilo inline quando fugir
+    # do padrão -- e aqui também com contagem literal, nunca var() dentro de
+    # repeat(), que é frágil e falha para a declaração inteira quando não resolve.
+    estilo = ("" if colunas == 3 else
+              f' style="grid-template-columns:repeat({int(colunas)},var(--bloco-w))"')
+    return (f'<nav class="menu-sino-caixa" aria-label="Seções do painel">'
+            f'<div class="menu-sino grid"{estilo}>{itens}</div></nav>')
+
+
+def pilula_fonte(chave: str, rotulo: str | None = None) -> str:
+    """Pílula branca com ponto: a fonte de um grupo de cards.
+
+    Mesmo registro de FONTES_INFO usado por tag_fonte() -- o rótulo curto é só
+    apresentação; a descrição completa continua no title.
+    """
+    padrao, classe, descricao = FONTES_INFO.get(chave, (chave, "", ""))
+    classe = f" {classe}" if classe else ""
+    return (f'<span class="pilula-fonte{classe}" title="{esc(descricao)}">'
+            f'<span class="ponto" aria-hidden="true"></span>{esc(rotulo or padrao)}</span>')
+
+
+def grupo_fonte(chave: str, texto: str, rotulo: str | None = None) -> str:
+    """Faixa que abre um grupo de cards: pílula da fonte + nota, na mesma linha."""
+    return (f'<div class="faixa-grupo bloco-fixo">{pilula_fonte(chave, rotulo)}'
+            f'<p class="faixa-grupo-texto">{esc(texto)}</p></div>')
+
+
+def seta_delta(atual, anterior, melhor: str = "menor") -> str:
+    """Seta de direção ao lado do número. A cor vem do julgamento, não do sinal."""
+    try:
+        d = int(atual) - int(anterior)
+    except (TypeError, ValueError):
+        return ""
+    if d == 0:
+        return ""
+    subiu = d > 0
+    bom = (subiu and melhor == "maior") or (not subiu and melhor == "menor")
+    return (f'<span class="kpi-seta {"bom" if bom else "ruim"}" aria-hidden="true">'
+            f'{"&#8593;" if subiu else "&#8595;"}</span>')
+
+
+def card_sino(titulo: str, valor, sub: str = "", rodape: str = "", delta: str = "",
+              seta: str = "", explicacao: str = "", indice: int = 0) -> str:
+    """Card do tema SINO: título verde centralizado, número, julgamento, explicação.
+
+    A fonte do dado não aparece no card: quem a declara é a faixa do grupo
+    (grupo_fonte), que vale para todos os cards abaixo dela.
+    """
+    return f"""
+<article class="card kpi card-sino" style="--i:{indice}">
+  <h3 class="sino-card-titulo">{esc(titulo)}</h3>
+  {f'<p class="sino-card-sub">{esc(sub)}</p>' if sub else ""}
+  <p class="kpi-numero sino-num">{num_html(valor)}{seta}</p>
+  {f'<div class="kpi-juizo sino-juizo">{delta}</div>' if delta else ""}
+  {f'<p class="kpi-rodape sino-rodape">{rodape}</p>' if rodape else ""}
+  {explicacao}
+</article>"""
+
+
+CSS_SINO = """
+/* ==== TEMA SINO ============================================================
+   Aplicado depois de CSS e so no dashboard_diretor. Primeiro a paleta (os
+   mesmos nomes de variavel da base, com valores novos), depois os componentes
+   que so existem aqui.                                                       */
+:root{
+  --verde-sino:#0C6E47;--verde-fundo:#09512F;--ouro:#F6C445;--gelo:#F5FAF7;--carvao:#0F1E16;
+  --creme:#F5FAF7;--mel:#0C6E47;--mel-claro:#F6C445;--mel-hover:#0a5c3b;--mel-deco:#0C6E47;
+  --oliva:#0C6E47;--oliva-escuro:#09512F;--verde:#D8EEE2;--verde-suave:#CFE8DC;--verde-texto:#1F8E5F;
+  --marfim:#F5FAF7;--titulo:#F5FAF7;--carimbo:#09512F;--tinta:#0F1E16;--traco:#F6C445;
+  --card:#ffffff;--tinta-2:#4C5F55;--divisoria:rgba(15,30,22,.12);--neutro-bg:rgba(12,110,71,.08);--bom-bg:#DCF0E5;
+  --sombra-card:0 12px 30px -16px rgba(9,81,47,.5);
+  --vermelho:#CC3327;--verm-bg:#FDECEA;--verm-ink:#B3231C;--ambar-bg:#FDF3D6;--ambar-ink:#7A5A00;--bom:#0C6E47;
+  --azul:#0C6E47;--rubro:#CC3327;--rubro-area:#9C2A22;
+  --tabela-bg:#ffffff;--tabela-cabeca:#EDF6F1;--tabela-linha:rgba(15,30,22,.10);--tabela-ink:#0F1E16;
+  --tabela-muted:#4C5F55;--tabela-hover:rgba(12,110,71,.05);
+  --r-colmeia:clamp(26px,3vw,44px);--r-card:clamp(18px,1.8vw,26px);
+}
+/* a entrada animada esconde os elementos DESTE cabecalho, nao os do tema mel */
+.anim .sino-logo,.anim .sino-nome,.anim .menu-sino .grid-item{opacity:0}
+
+/* ---- marca: losango + SINO / Gestao ---------------------------------------
+   As duas caixas (.sino-logo e .sino-sub) tem tamanho fixo e nunca mudam: o
+   losango e o "Gestao" animam DENTRO delas. Por isso o hover nao empurra nada. */
+.marca-sino{align-items:center;gap:clamp(10px,1.4vw,24px)}
+.sino-logo{position:relative;flex:0 0 auto;display:block;
+  width:clamp(50px,8.6vh,100px);height:clamp(50px,8.6vh,100px)}
+.sino-losango-svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible;
+  filter:drop-shadow(0 8px 16px rgba(9,81,47,.22))}
+.sino-texto{position:relative;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.sino-nome{display:block;font:800 clamp(26px,min(5.4vh,3.1vw),54px)/1 var(--sans);
+  letter-spacing:-.035em;color:var(--verde-sino)}
+/* "Gestao" e ABSOLUTO, pendurado abaixo de "SINO": fica fora do fluxo, entao a
+   altura de .sino-texto passa a ser so a do "SINO" e o align-items:center da
+   .marca-sino centraliza o SINO com o icone. Enquanto ele contava no fluxo, a
+   coluna (SINO + linha reservada) e que ficava centrada, e o SINO subia.
+   Fora do fluxo o ganho de "nao empurra nada" fica ainda mais forte: agora ele
+   nao ocupa espaco algum, em nenhum momento.                                 */
+.sino-sub{position:absolute;top:100%;left:0;display:block;height:1.24em;overflow:visible;
+  font-size:clamp(13px,min(2.4vh,1.35vw),24px);line-height:1.24}
+.sino-sub-txt{display:inline-block;font:700 1em/1.24 var(--sans);letter-spacing:-.02em;
+  color:var(--verde-fundo);opacity:0;transform-origin:0 50%;will-change:transform,opacity}
+/* sem GSAP (ou com movimento reduzido) o mesmo efeito, em CSS e sem reflow */
+html:not(.gsap) .sino-losango-svg{transition:opacity .35s var(--ease),transform .45s var(--ease)}
+html:not(.gsap) .sino-sub-txt{transition:opacity .35s var(--ease) .1s}
+html:not(.gsap) .sino-logo:hover .sino-losango-svg,
+html:not(.gsap) .marca-sino:focus-visible .sino-losango-svg{opacity:0;transform:scale(.28) rotate(135deg)}
+html:not(.gsap) .sino-logo:hover ~ .sino-texto .sino-sub-txt,
+html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
+
+/* ---- menu em blocos (Staggered Grid Reveal) ---- */
+.menu-sino-caixa{flex:0 0 auto;display:flex;align-items:center}
+/* COLUNA COM LARGURA EXPLICITA, NAO 1fr -- nao troque de volta.
+   Este grid vive dentro de .menu-sino-caixa, que e flex:0 0 auto: largura
+   shrink-to-fit, ou seja, dimensionamento INTRINSECO. Em minmax(0,1fr) a funcao
+   de minimo e 0 (nao e intrinseca), entao a base da trilha nunca cresce com o
+   conteudo; sob restricao de max-content a fracao fr resolve para 0 e as tres
+   colunas ficam com 0px. O resultado e o menu sumir: os seis blocos se empilham
+   num filete de ~19px (so as duas lacunas) no canto direito.
+   O .grade da base usa 1fr sem problema porque mora dentro de .secao, que e
+   position:absolute;inset:0 -- largura DEFINIDA. Aqui nao ha.               */
+.menu-sino{display:grid;--bloco-w:clamp(78px,7vw,116px);
+  grid-template-columns:repeat(3,var(--bloco-w));
+  gap:clamp(6px,.9vh,12px);justify-items:stretch}
+.menu-sino .grid-item{display:flex;align-items:center;justify-content:center;text-align:center;
+  min-width:0;min-height:clamp(36px,6.2vh,58px);
+  padding:6px clamp(7px,.8vw,14px);border-radius:clamp(10px,1vw,16px);
+  background:var(--verde-sino);color:#fff;text-decoration:none;
+  font:700 clamp(10.5px,1.5vh,13.5px)/1.15 var(--sans);letter-spacing:-.01em;
+  box-shadow:0 8px 18px -12px rgba(9,81,47,.65);
+  transition:background .22s var(--ease),color .22s var(--ease),box-shadow .22s var(--ease)}
+/* TRANSFORM FICA FORA DA TRANSICAO ATE O GSAP SOLTAR -- nao devolva para a linha
+   de cima. Transition em transform num elemento que o GSAP anima por transform e
+   conflito documentado, e foi o que escondeu o menu: a entrada ficou presa em
+   transform:scale(0,0) com opacity:1 -- a propriedade COM transition congelou no
+   estado inicial, a SEM transition (opacity) terminou normalmente. O JS poe
+   .pronto quando a entrada acaba e devolve os blocos ao CSS (clearProps); dai em
+   diante o transform pode transicionar sem disputar com ninguem. Mesmo padrao do
+   losango, que resolve isso por html:not(.gsap).                              */
+.menu-sino.pronto .grid-item{transition:background .22s var(--ease),color .22s var(--ease),
+  box-shadow .22s var(--ease),transform .22s var(--ease)}
+.menu-sino .grid-item:hover{background:#0f8154;transform:translateY(-2px);box-shadow:0 12px 22px -12px rgba(9,81,47,.75)}
+.menu-sino .grid-item.ativa{background:var(--ouro);color:var(--verde-fundo);box-shadow:0 10px 20px -12px rgba(122,90,0,.6)}
+.menu-sino .grid-item.ativa:hover{background:#f7cd5f}
+.menu-sino .grid-item:focus-visible{outline:2px solid var(--verde-fundo);outline-offset:3px}
+
+/* ---- carimbo e cabecalho de secao ---- */
+.carimbo{font-weight:700;color:var(--verde-fundo)}
+.secao .subtitulo{color:var(--ouro)}
+.titulo-secao{letter-spacing:-.015em}
+.secao-cabeca.empilhada{display:block}
+.secao-cabeca.empilhada .subtitulo{margin-top:.1em}
+
+/* ---- faixa que abre um grupo de cards ---- */
+.faixa-grupo{display:flex;align-items:center;flex-wrap:wrap;gap:8px clamp(12px,1.4vw,22px);margin:2px 0 0}
+.faixa-grupo-texto{font-size:var(--t-meta);line-height:1.5;font-weight:600;color:rgba(245,250,247,.9);max-width:86ch}
+.pilula-fonte{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;
+  background:#fff;color:var(--verde-sino);border-radius:999px;
+  padding:7px clamp(14px,1.2vw,20px);font:700 var(--t-meta)/1.2 var(--sans);letter-spacing:.01em;
+  box-shadow:0 8px 18px -14px rgba(9,81,47,.7)}
+.pilula-fonte .ponto{width:8px;height:8px;border-radius:50%;background:var(--verde-sino)}
+.pilula-fonte.licencas{color:var(--ambar-ink)}
+.pilula-fonte.licencas .ponto{background:var(--ouro)}
+
+/* ---- card do tema SINO ---- */
+.card-sino{align-items:center;text-align:center;gap:6px;padding:clamp(16px,1.7vw,26px)}
+.sino-card-titulo{font:800 var(--t-card)/1.15 var(--sans);letter-spacing:-.02em;
+  color:var(--verde-sino);text-wrap:balance}
+.sino-card-sub{font:700 var(--t-meta)/1.3 var(--sans);color:var(--tinta-2)}
+.sino-num{display:flex;align-items:baseline;justify-content:center;gap:.14em;font-size:var(--t-num-2)}
+.kpi-seta{font:700 .42em/1 var(--sans);letter-spacing:0;color:var(--bom)}
+.kpi-seta.ruim{color:var(--verm-ink)}
+.sino-juizo{justify-content:center;min-height:0}
+.card-sino .badge{align-self:center}
+.sino-rodape{font-size:var(--t-meta);text-align:center}
+.card-sino .kpi-explica{width:100%;text-align:left;margin-top:auto}
+.card-sino:hover{transform:translateY(-3px);box-shadow:0 20px 38px -18px rgba(9,81,47,.6)}
+
+/* ---- componentes da base que tinham cor cravada ---- */
+.pilula:hover{background:#c6e8d7}
+.slide-corpo em{color:var(--verde-sino)}
+.dist-preenche.aviso{background:var(--ouro)}
+
+/* ---- telas estreitas ---- */
+@media (max-width:899px){
+  .sino-logo{width:54px;height:54px}
+  .sino-nome{font-size:26px}
+  .sino-sub{font-size:13px}
+  .menu-sino-caixa{flex:1 0 100%}
+  /* aqui 1fr e correto: .menu-sino-caixa e flex:1 0 100% e o grid tem width:100%,
+     ou seja, largura definida -- o caso oposto ao de cima. */
+  .menu-sino{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .menu-sino .grid-item{min-width:0;min-height:38px}
+  .faixa-grupo-texto{max-width:none}
+}
+
+/* ---- impressao: nada escondido pela animacao ---- */
+@media print{
+  .sino-logo,.sino-nome,.menu-sino .grid-item{opacity:1 !important;transform:none !important}
+  .sino-sub{display:none}
+  .menu-sino-caixa{display:none}
+}
+"""
+
+
+# --- JS: cabecalho do tema SINO (entrada, Staggered Grid Reveal, hover da marca) ---
+JS_HEADER_SINO = """
+(function(){
+  "use strict";
+  var doc = document, win = window, raiz = doc.documentElement;
+  var soltar = function(){ raiz.classList.remove("anim"); };
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var g = win.gsap;
+  if (!g || rm) { soltar(); return; }   // sem GSAP o efeito vira transicao CSS (html:not(.gsap))
+  raiz.classList.add("gsap");
+  try {
+    var caixa = doc.querySelector(".sino-logo");
+    var losango = doc.querySelector(".sino-losango-svg");
+    var nome = doc.querySelector(".sino-nome");
+    var sub = doc.querySelector(".sino-sub");
+    var subTxt = doc.querySelector(".sino-sub-txt");
+    var marca = doc.querySelector(".marca-sino");
+    var menu = doc.querySelector(".menu-sino");
+    var blocos = doc.querySelectorAll(".menu-sino .grid-item");
+    if (!caixa || !losango || !nome || !sub || !subTxt || !marca) { soltar(); return; }
+    soltar();  // o CSS volta ao estado final agora; os "from" abaixo aplicam o inicial no mesmo quadro
+
+    // --- entrada da pagina ---
+    // O menu usa o Staggered Grid Reveal (gsapify) tal como publicado, sem o
+    // scrollTrigger: o assets/gsap.min.js e o core e nao traz o plugin, e o menu
+    // ja nasce visivel no topo -- nao havia o que disparar por scroll.
+    var entrada = g.timeline({ defaults: { ease: "power3.out" } })
+     .from(losango, { scale: .25, rotation: -140, opacity: 0, duration: .95,
+                      transformOrigin: "50% 50%", ease: "back.out(1.5)" }, 0)
+     .from(nome, { yPercent: 38, opacity: 0, duration: .75 }, .2)
+     .from(blocos, { scale: 0, opacity: 0, duration: .4,
+                     stagger: { amount: .6, from: "center" }, ease: "back.out(1.7)",
+                     clearProps: "transform,opacity" }, .35);
+
+    // O MENU NAO PODE DEPENDER DA ANIMACAO PARA EXISTIR.
+    // Quando a entrada acaba, os blocos voltam a ser 100% CSS: sem transform
+    // inline (senao o :hover, que tambem usa transform, nao teria efeito) e com
+    // .pronto no contenedor, que devolve o transform para a transicao do hover.
+    // O setTimeout e rede de seguranca, nao enfeite: se a linha do tempo travar
+    // -- foi o que aconteceu com a transition em transform --, o menu aparece
+    // assim mesmo, estatico, em vez de sumir.
+    var liberar = function(){
+      g.killTweensOf(blocos);
+      g.set(blocos, { clearProps: "transform,opacity,translate,rotate,scale" });
+      if (menu) menu.classList.add("pronto");
+    };
+    entrada.eventCallback("onComplete", liberar);
+    win.setTimeout(liberar, 2400);
+
+    // --- hover: o losango se transforma no escrito "Gestao" ---
+    // Quem escuta o mouse e a CAIXA do losango, que nunca se move; o que anima e
+    // o SVG dentro dela. Se o gatilho fosse o proprio SVG, ele sairia de baixo do
+    // cursor no meio da animacao e o hover piscaria.
+    var tl = null, pendente = null;
+    function destino(){
+      var a = caixa.getBoundingClientRect(), b = sub.getBoundingClientRect();
+      return { x: (b.left + b.height * .34) - (a.left + a.width / 2),
+               y: (b.top + b.height / 2) - (a.top + a.height / 2) };
+    }
+    function montar(){
+      var d = destino();
+      return g.timeline({ paused: true })
+        .to(losango, { x: d.x, y: d.y, rotation: 135, scale: .16, opacity: 0,
+                       duration: .55, ease: "power2.inOut", transformOrigin: "50% 50%" }, 0)
+        .fromTo(subTxt, { opacity: 0, scale: .45, xPercent: -10 },
+                        { opacity: 1, scale: 1, xPercent: 0, duration: .5,
+                          ease: "back.out(1.7)", transformOrigin: "0% 50%" }, .22);
+    }
+    // UM ESTADO SO: aberto = mouse em cima OU foco de TECLADO.
+    // Antes o pointer e o foco mandavam na mesma linha do tempo por conta
+    // propria. Clicar no logo tambem da foco ao link, entao depois do clique o
+    // foco dizia "aberto" enquanto o pointerleave mandava fechar: as duas ordens
+    // se atropelavam e a volta do icone saia engasgada. Com :focus-visible o
+    // clique de mouse nao conta como foco, e so sobra uma fonte de verdade.
+    var sobre = false, focado = false;
+    function sincronizar(){
+      var aberto = sobre || focado;
+      if (!tl) {
+        if (!aberto) return;          // nada a fechar: a linha do tempo nem existe
+        tl = montar();
+      }
+      tl.timeScale(aberto ? 1 : 1.35);  // a volta e um pouco mais rapida que a ida
+      if (aberto) tl.play(); else tl.reverse();
+    }
+    caixa.addEventListener("pointerenter", function(){ sobre = true; sincronizar(); });
+    caixa.addEventListener("pointerleave", function(){ sobre = false; sincronizar(); });
+    marca.addEventListener("focus", function(){
+      var teclado = true;
+      try { teclado = marca.matches(":focus-visible"); } catch (e) {}
+      focado = teclado;
+      sincronizar();
+    });
+    marca.addEventListener("blur", function(){ focado = false; sincronizar(); });
+
+    // redimensionou: a geometria do destino mudou; a linha do tempo e refeita na proxima vez
+    win.addEventListener("resize", function(){
+      if (!tl) return;
+      win.clearTimeout(pendente);
+      pendente = win.setTimeout(function(){
+        if (!tl) return;
+        tl.pause(0).kill(); tl = null;
+        g.set(losango, { clearProps: "all" });
+        g.set(subTxt, { clearProps: "all" });
+        sincronizar();   // se o mouse ainda estiver em cima, remonta e reabre
+      }, 180);
+    });
+  } catch (e) { soltar(); }
+})();
+"""
