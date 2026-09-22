@@ -16,6 +16,11 @@ ficou como fallback, usado só quando listTicketStatus não responde.
 Rode `--listar-status` para ver os status existentes e `--listar-categorias` para
 ver categorias/técnicos reais da fila (HELPDESK_SISTEMAS, HELPDESK_DEV_NAMES).
 
+Atendimentos do dia (showTicketsPerPeriod) tem DOIS modos, somados no mesmo
+por_tecnico: o solicitante "Atendimento Diário" (técnico lido da linha
+"Técnico:" da descrição) e a tag HELPDESK_TAG_ATENDIMENTO no título (técnico
+lido do CAMPO do chamado). Chamado que casa nos dois conta uma vez só.
+
 Somente leitura: nenhum endpoint de escrita é chamado. Os agregados novos
 (fila por sistema, por status, por técnico, idade, bloco de desenvolvimento) são
 calculados dos MESMOS tickets já baixados por showTicketsByStatus -- nenhuma
@@ -221,6 +226,36 @@ ROTULO_OUTROS = "Outros"
 # sem acento e sem caixa -- "Ketlyn" acha "Ketlyn Izidorio".
 EQUIPES_DEV = _parse_sistemas(os.getenv("HELPDESK_DEV_EQUIPES", ""))
 
+# --- Modo "tag": o SEGUNDO jeito de um atendimento diario chegar ao Milldesk.
+# O servico antigo abre o chamado com o solicitante "Atendimento Diario" e
+# escreve quem atendeu na linha "Tecnico:" da DESCRICAO. O servico novo marca o
+# chamado com esta tag no TITULO, e ali quem atendeu esta no CAMPO do chamado
+# (agent). Sao dois caminhos para o mesmo fato, entao os dois somam no mesmo
+# por_tecnico. Vazio desliga o modo e a saida volta a ser exatamente a de antes.
+TAG_ATENDIMENTO = os.getenv("HELPDESK_TAG_ATENDIMENTO", "AtendimentoDiario")
+TAG_ALVO = normalizar(TAG_ATENDIMENTO)
+# Onde procurar a tag (separados por ","). So o titulo por padrao: procurar na
+# descricao tambem transformaria qualquer mencao a tag no corpo do texto em
+# atendimento.
+TAG_CAMPOS = [
+    c.strip() for c in os.getenv("HELPDESK_TAG_CAMPOS", "ticket").split(",") if c.strip()
+]
+# O campo do chamado escreve "Fabio" (com acento), "Guilherme P.", "Luiz"; a
+# descricao do modo antigo escreve "Fabio", "Guilherme", "Luiz Araujo" -- medido
+# em 392 chamados de 30 dias. Sao as MESMAS pessoas: sem este mapa a soma nao
+# soma, EMPILHA cada uma em duas linhas do painel. Os rotulos sao os que a
+# descricao ja produz hoje, para o dado existente nao mudar nem uma letra.
+# Mesmo parser do mapa de sistemas, mas a comparacao aqui e EXATA (sem acento e
+# sem caixa), NAO por trecho: existem "Guilherme P." e "Guilherme Anderson dos
+# Santos" nesta instalacao, e sao pessoas diferentes. Um trecho "guilherme"
+# fundiria as duas em silencio, creditando o atendimento de uma a outra. Nome
+# que o mapa nao reconhece aparece como linha propria e em nomes_sem_mapa --
+# falhar visivelmente e melhor do que somar a pessoa errada.
+TECNICOS_CANONICOS = _parse_sistemas(os.getenv(
+    "HELPDESK_TECNICOS_CANONICOS",
+    "Fabio=fabio;Roberto=roberto;Guilherme=guilherme p.;Luiz Araujo=luiz,luiz araujo",
+))
+
 # Quais sistemas ganham LISTA de chamados no JSON (nao a contagem -- essa e de
 # todos, sempre). Guardar os 314 chamados de todos os sistemas fazia o
 # helpdesk.json passar de 380 KB, e cada briefing le esse arquivo inteiro.
@@ -252,8 +287,49 @@ def tecnico_da_descricao(ticket: dict) -> str:
     return match.group(1).strip() if match else ""
 
 
+def tem_tag_atendimento(ticket: dict) -> bool:
+    """O chamado carrega a tag do atendimento diário (por padrão, no título)?
+
+    Comparação por trecho, sem acento e sem caixa. "atendimentodiario" (sem
+    espaço) NÃO casa com o solicitante "Atendimento Diário" (com espaço), então
+    os dois modos nunca disputam o mesmo chamado por engano.
+    """
+    if not TAG_ALVO:
+        return False
+    return any(TAG_ALVO in normalizar(ticket.get(campo) or "") for campo in TAG_CAMPOS)
+
+
+def tecnico_canonico(nome: str) -> tuple[str, bool]:
+    """Nome vindo do CAMPO do chamado -> o rótulo que o resto do painel já usa.
+
+    Comparação EXATA (sem acento e sem caixa), nunca por trecho: "Guilherme P."
+    e "Guilherme Anderson dos Santos" são pessoas diferentes nesta instalação, e
+    casar por trecho creditaria o atendimento de uma à outra sem aviso nenhum.
+    Devolve (rótulo, casou). Sem match, devolve o nome cru e `casou` False: ele
+    vira linha própria no painel e entra em nomes_sem_mapa -- mostrar duas
+    grafias e avisar é melhor do que somar silenciosamente duas pessoas.
+    """
+    alvo = normalizar(nome)
+    if not alvo:
+        return "", False
+    for rotulo, apelidos in TECNICOS_CANONICOS:
+        if any(apelido == alvo for apelido in apelidos):
+            return rotulo, True
+    return str(nome).strip(), False
+
+
 def atendimentos_do_dia(dia: date) -> dict:
-    """Tickets FECHADOS criados no dia pelo solicitante de atendimento diário."""
+    """Atendimentos FECHADOS do dia, somando os DOIS modos de registro.
+
+    Modo "solicitante" (o original, intocado): chamados do solicitante de
+    atendimento diário; quem atendeu sai da linha "Técnico:" da descrição.
+    Modo "tag" (novo): chamados com TAG_ATENDIMENTO no título; ali quem atendeu
+    sai do CAMPO do chamado (agent), não da descrição.
+
+    Os dois somam num único por_tecnico -- é a mesma pergunta ("quantos
+    atendimentos essa pessoa fez"), só muda por onde o chamado entrou. Chamado
+    que casar nos dois conta UMA vez: o modo solicitante tem precedência.
+    """
     tickets = []
     formato_usado = None
     erros = []
@@ -273,11 +349,11 @@ def atendimentos_do_dia(dia: date) -> dict:
     if formato_usado is None:
         return {"erro": "Nenhum formato de data aceito pela API", "tentativas": erros}
 
-    # Filtro 1: solicitante "Atendimento Diario"
+    # --- Modo 1 (INALTERADO): solicitante "Atendimento Diario"
     alvo = normalizar(SOLICITANTE_ATENDIMENTO)
     do_solicitante = [t for t in tickets if alvo in normalizar(t.get("requester", ""))]
 
-    # Filtro 2: status Fechado (se o endpoint retornar o campo)
+    # Status Fechado (se o endpoint retornar o campo)
     aviso_status = None
     if any("status" in t for t in do_solicitante):
         atendimentos = [t for t in do_solicitante if normalizar(t.get("status", "")) == "fechado"]
@@ -297,13 +373,66 @@ def atendimentos_do_dia(dia: date) -> dict:
             tecnico = "(não identificado)"
         por_tecnico[tecnico] = por_tecnico.get(tecnico, 0) + 1
 
+    # --- Modo 2 (NOVO): tag no título; quem atendeu vem do CAMPO do chamado.
+    # O "not in ids_modo1" é o que impede contar duas vezes um chamado que tenha
+    # a tag E o solicitante antigo -- o modo 1 tem precedência.
+    ids_modo1 = {t.get("id") for t in do_solicitante}
+    com_tag = [t for t in tickets
+               if t.get("id") not in ids_modo1 and tem_tag_atendimento(t)]
+    # Mesma régua do modo 1: só conta o que fechou. Quando o endpoint não
+    # devolve status, nenhum dos dois filtra (e o aviso já está registrado).
+    if aviso_status is None:
+        tag_fechados = [t for t in com_tag
+                        if normalizar(t.get("status", "")) == "fechado"]
+    else:
+        tag_fechados = com_tag
+    tag_por_tecnico: dict[str, int] = {}
+    tag_sem_tecnico = []
+    nomes_sem_mapa: set[str] = set()
+    for t in tag_fechados:
+        bruto = campo_tecnico(t)
+        tecnico, casou = tecnico_canonico(bruto)
+        if not tecnico:
+            tag_sem_tecnico.append(t.get("id"))
+            tecnico = "(não identificado)"
+        elif not casou:
+            nomes_sem_mapa.add(tecnico)
+        tag_por_tecnico[tecnico] = tag_por_tecnico.get(tecnico, 0) + 1
+
+    # --- Soma dos dois modos: uma informação só por técnico.
+    total_por_tecnico = dict(por_tecnico)
+    for nome, qtd in tag_por_tecnico.items():
+        total_por_tecnico[nome] = total_por_tecnico.get(nome, 0) + qtd
+
     resultado = {
         "dia": dia.strftime("%d/%m/%Y") + f" ({['seg','ter','qua','qui','sex','sab','dom'][dia.weekday()]})",
-        "total_atendimentos_fechados": len(atendimentos),
-        "por_tecnico": dict(sorted(por_tecnico.items(), key=lambda kv: -kv[1])),
+        "total_atendimentos_fechados": len(atendimentos) + len(tag_fechados),
+        "por_tecnico": dict(sorted(total_por_tecnico.items(), key=lambda kv: -kv[1])),
         "do_solicitante_mas_nao_fechados": nao_fechados,
-        "chamados_normais_abertos_no_dia": len(tickets) - len(do_solicitante),
+        "chamados_normais_abertos_no_dia": (
+            len(tickets) - len(do_solicitante) - len(com_tag)
+        ),
         "tickets_sem_tecnico_na_descricao": sem_tecnico,
+        # Trilha de auditoria: sem ela ninguém explica por que o total mudou.
+        # As chaves acima continuam sendo o número que vale -- isto é o detalhe.
+        "por_modo": {
+            "solicitante": {
+                "total": len(atendimentos),
+                "por_tecnico": dict(sorted(por_tecnico.items(), key=lambda kv: -kv[1])),
+            },
+            "tag": {
+                "tag": TAG_ATENDIMENTO,
+                "campos": TAG_CAMPOS,
+                "total": len(tag_fechados),
+                "por_tecnico": dict(sorted(tag_por_tecnico.items(), key=lambda kv: -kv[1])),
+                "nao_fechados": len(com_tag) - len(tag_fechados),
+                "sem_tecnico_no_campo": tag_sem_tecnico,
+                # Nome que o mapa não reconheceu: some como linha separada no
+                # painel. É o sinal de que falta um trecho em
+                # HELPDESK_TECNICOS_CANONICOS.
+                "nomes_sem_mapa": sorted(nomes_sem_mapa),
+            },
+        },
     }
     if aviso_status:
         resultado["aviso"] = aviso_status
