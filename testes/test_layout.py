@@ -120,6 +120,12 @@ ALTURA_CARD = {
     "faixa-prazo": 110,
     "mov-grade": 200,
 }
+# Teto de colunas de uma grade (espelha o @media (min-width:1060px) de
+# dashboard_base.py). Sem isso o modelo acha que cabem 6 colunas numa tela larga,
+# conta menos linhas do que a pagina tem de verdade e subestima a altura.
+COLUNA_MAX = {
+    "painel-exec": 4,
+}
 COLUNA_MIN = {
     "grade": 240,
     "grade-dev": 230,
@@ -141,6 +147,7 @@ class LeitorSecoes(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.pilha: list[str] = []
         self.secoes: dict[str, list[dict]] = {}
+        self.rolaveis: set[str] = set()
         self.secao: str | None = None
         self._bloco: dict | None = None
         self._prof_bloco = -1
@@ -151,12 +158,20 @@ class LeitorSecoes(HTMLParser):
         if tag == "section" and "secao" in classes and d.get("id"):
             self.secao = d["id"]
             self.secoes.setdefault(self.secao, [])
+            if "rolavel" in classes:
+                # Numa secao .rolavel o conteudo manda na altura e a secao rola;
+                # bloco-elastico ali NAO comprime (ver dashboard_base.py).
+                self.rolaveis.add(self.secao)
         elif self.secao and self.pilha and self.pilha[-1] == "section":
             self._bloco = {
                 "tag": tag,
                 "classes": classes,
                 "cards": 0,
-                "grade": next((c for c in classes if c in GRADES), None),
+                # Toda grade carrega a classe base "grade" MAIS um modificador
+                # ("painel-exec", "mov-grade"...). E o modificador que diz a
+                # densidade real; pegar "grade" primeiro media a pagina errada.
+                "grade": (next((c for c in classes if c in GRADES and c != "grade"), None)
+                          or next((c for c in classes if c in GRADES), None)),
             }
             self._prof_bloco = len(self.pilha)
             self.secoes[self.secao].append(self._bloco)
@@ -190,12 +205,15 @@ def colunas(grade: str, largura: int, altura: int) -> int:
     _, pad, gap = espacos(altura)
     util = largura - 2 * MARGEM - 2 * pad
     minimo = COLUNA_MIN.get(grade, 240)
-    return max(1, int((util + gap) // (minimo + gap)))
+    cabem = max(1, int((util + gap) // (minimo + gap)))
+    return min(cabem, COLUNA_MAX.get(grade, 99))
 
 
-def altura_bloco(bloco: dict, largura: int, altura: int) -> float:
-    """Altura mínima estimada. Bloco elástico vale o mínimo que ele comprime."""
-    if "bloco-elastico" in bloco["classes"]:
+def altura_bloco(bloco: dict, largura: int, altura: int,
+                 rolavel: bool = False) -> float:
+    """Altura mínima estimada. Bloco elástico vale o mínimo que ele comprime --
+    a menos que a seção role: ali ele vale a altura natural do conteúdo."""
+    if "bloco-elastico" in bloco["classes"] and not (rolavel and bloco["grade"]):
         return MIN_ELASTICO
     if bloco["grade"]:
         g = bloco["grade"]
@@ -225,28 +243,31 @@ def teste_contrato(pagina: str, secoes: dict[str, list[dict]]) -> None:
             falhar(f"{pagina} #{secao}: {len(sem)} bloco(s) sem contrato de flex: {sem}")
 
 
-def teste_absorvente(pagina: str, secoes: dict[str, list[dict]]) -> None:
+def teste_absorvente(pagina: str, secoes: dict[str, list[dict]],
+                     rolaveis: frozenset = frozenset()) -> None:
     for secao, blocos in secoes.items():
-        if not blocos:
-            continue
+        if not blocos or secao in rolaveis:
+            continue  # secao que rola nao tem sobra para alguem absorver
         if not any("bloco-elastico" in b["classes"] for b in blocos):
             falhar(f"{pagina} #{secao}: nenhum bloco-elastico — não há quem absorva a sobra")
 
 
-def teste_densidade(pagina: str, secoes: dict[str, list[dict]]) -> None:
+def teste_densidade(pagina: str, secoes: dict[str, list[dict]],
+                    rolaveis: frozenset = frozenset()) -> None:
     largura, altura, rotulo = VIEWPORTS[0]
     disponivel = altura_util(largura, altura)
     _, _, gap = espacos(altura)
     for secao, blocos in secoes.items():
         if not blocos:
             continue
-        total = (sum(altura_bloco(b, largura, altura) for b in blocos)
+        rola = secao in rolaveis
+        total = (sum(altura_bloco(b, largura, altura, rola) for b in blocos)
                  + gap * (len(blocos) - 1))
         densidade = total / disponivel
         if densidade > LIMITE_DENSIDADE:
             detalhe = ", ".join(
                 f'{b["grade"] or (b["classes"][0] if b["classes"] else b["tag"])}'
-                f'={int(altura_bloco(b, largura, altura))}'
+                f'={int(altura_bloco(b, largura, altura, rola))}'
                 for b in blocos)
             falhar(f"{pagina} #{secao} em {rotulo}: {densidade:.1f} telas "
                    f"(limite {LIMITE_DENSIDADE}) — precisa de {int(total)}px, "
@@ -280,8 +301,8 @@ def main() -> int:
         leitor.feed(caminho.read_text(encoding="utf-8"))
         print(f"\n--- {nome}: {len(leitor.secoes)} seções ---")
         teste_contrato(nome, leitor.secoes)
-        teste_absorvente(nome, leitor.secoes)
-        teste_densidade(nome, leitor.secoes)
+        teste_absorvente(nome, leitor.secoes, frozenset(leitor.rolaveis))
+        teste_densidade(nome, leitor.secoes, frozenset(leitor.rolaveis))
 
     print("\n--- grade única ---")
     teste_grade_unica()

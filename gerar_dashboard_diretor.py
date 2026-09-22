@@ -193,7 +193,7 @@ def gerar_html() -> str:
         explicacao=explica("lic_vencidas"), indice=0)
 
     secao_destaques = f"""
-<section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
+<section class="secao rolavel" id="destaques" data-scroll aria-labelledby="t-destaques">
   <header class="secao-cabeca empilhada bloco-fixo">
     {titulo_secao("Panorama do Dia", "destaques")}
     <p class="subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>

@@ -804,6 +804,13 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .colmeia{position:relative;flex:1 1 auto;min-height:0;background:var(--mel);border-radius:var(--r-colmeia);overflow:hidden;isolation:isolate}
 .secao{position:absolute;inset:0;padding:var(--pad);display:flex;flex-direction:column;gap:var(--gap);opacity:0;visibility:hidden;transform:translateY(34px);transition:opacity .5s var(--ease),transform .65s var(--ease),visibility 0s linear .65s;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(40,54,24,.35) transparent;outline:none}
 .secao.antes{transform:translateY(-34px)}
+/* SECAO ROLAVEL -- o conteudo manda na altura e a secao rola.
+   .secao ja tem overflow:auto; o que faltava era os blocos pararem de encolher.
+   Item flex nasce com flex-shrink:1, entao numa secao cheia o navegador
+   comprimia os cards ate o texto quebrar dentro deles, em vez de deixar a
+   secao rolar. Aqui bloco-elastico passa a valer "altura natural".
+   As classes do contrato continuam as mesmas (testes/test_layout.py). */
+.secao.rolavel>.bloco-elastico{flex:0 0 auto;min-height:auto}
 .secao.ativa{opacity:1;visibility:visible;transform:none;transition-delay:.06s,.06s,0s;z-index:1}
 .titulo-secao{font:400 var(--t-hero)/.95 var(--serif);color:var(--titulo);letter-spacing:-.01em;text-wrap:balance}
 .titulo-secao .l{display:block}
@@ -1140,7 +1147,17 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 
 /* Grades que moravam nos geradores, trazidas para a base. Agora sao so a
    densidade da grade padrao -- a mecanica e uma so. */
-.painel-exec{--card-min:230px}
+.painel-exec{--card-min:230px;--colunas-max:4;
+  /* auto-FILL, nao auto-fit: com auto-fit as trilhas vazias colapsam e um card
+     sozinho (o de licencas) estica pela largura inteira da pagina. */
+  grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--card-min)),1fr))}
+/* Mesma especificidade de .grade (uma classe): quem vence e a ORDEM. Esta regra
+   precisa vir DEPOIS de .grade -- nao mova para cima. */
+@media (min-width:1060px){
+  /* Teto de 4 colunas: sem isso, numa tela larga os 7 cards entram todos na
+     mesma linha, cada um estreito demais para o titulo caber. */
+  .painel-exec{grid-template-columns:repeat(var(--colunas-max),minmax(0,1fr))}
+}
 .duas-colunas-secao{--card-min:300px}
 .faixa-prazo{--card-min:150px;margin-top:4px}
 .mov-grade{--card-min:260px}
