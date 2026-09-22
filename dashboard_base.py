@@ -1108,7 +1108,11 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .tabela-tickets .atrasado{color:var(--verm-ink);font-weight:800}
 
 /* ---- cards de desenvolvedor ---- */
-.grade-dev{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--gap)}
+/* auto-FILL, nao auto-fit: com auto-fit as trilhas vazias colapsam e poucos
+   cards esticam. Esta classe e usada DUAS vezes na secao Desenvolvimento (as
+   equipes e os devs); com 2 equipes e 9 devs dava cards de 721px ao lado de
+   cards de 231px, na mesma tela. */
+.grade-dev{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:var(--gap)}
 .card-dev .dev-nome{font:800 var(--t-card)/1.15 var(--sans);letter-spacing:-.01em;color:var(--tinta)}
 .card-dev .kpi-mini{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:var(--t-meta);color:var(--tinta-2)}
 .card-dev .kpi-mini b{color:var(--tinta)}

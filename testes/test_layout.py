@@ -129,7 +129,8 @@ ALTURA_CARD = {
 # dashboard_base.py). Sem isso o modelo acha que cabem 6 colunas numa tela larga,
 # conta menos linhas do que a pagina tem de verdade e subestima a altura.
 COLUNA_MAX = {
-    "painel-exec": 4,
+    "painel-exec": 4,     # @media (min-width:1060px) em dashboard_base.py
+    "grade-fontes": 3,    # repeat(3,minmax(0,1fr)) -- colunas fixas, nao auto
 }
 COLUNA_MIN = {
     "grade": 240,
