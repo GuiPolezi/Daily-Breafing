@@ -731,6 +731,7 @@ CSS = """
      tema, entao a cor tambem: no diario o fundo e ambar, no diretor verde,
      e nenhuma cor unica passa em contraste nos dois. */
   --sobre-secao:#2b2114;--sobre-secao-2:#43341f;--sobre-secao-linha:rgba(43,33,20,.22);
+  --sobre-secao-fraco:rgba(43,33,20,.65);
   --card:#fefae0;--tinta-2:#5c6446;--divisoria:rgba(40,54,24,.14);--neutro-bg:rgba(40,54,24,.08);--bom-bg:#e3eecd;
   --sombra-card:0 10px 30px -18px rgba(40,54,24,.35);
   --vermelho:#e0261b;--verm-bg:#fdecec;--verm-ink:#c1272d;--ambar-bg:#fff3d6;--ambar-ink:#855800;--bom:#3f6d17;
@@ -970,13 +971,13 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .slide-corpo .al-c{text-align:center}
 .slide-corpo .al-d{text-align:right}
 .slider-controles{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:18px}
-.seta{background:none;border:0;color:var(--oliva);font:400 34px/1 var(--serif);cursor:pointer;padding:2px 12px;border-radius:12px;transition:transform .2s var(--ease),opacity .2s,background .2s}
-.seta:hover{transform:scale(1.15);background:rgba(40,54,24,.08)}
+.seta{background:none;border:0;color:var(--sobre-secao);font:400 34px/1 var(--serif);cursor:pointer;padding:2px 12px;border-radius:12px;transition:transform .2s var(--ease),opacity .2s,background .2s}
+.seta:hover{transform:scale(1.15);background:var(--sobre-secao-linha)}
 .seta:disabled{opacity:.4;cursor:default;transform:none;background:none}
 .indicadores{display:flex;gap:12px}
-.indicadores button{width:clamp(28px,3vw,40px);height:5px;border-radius:999px;border:0;background:rgba(96,108,56,.45);cursor:pointer;padding:0;transition:background .3s,transform .3s}
-.indicadores button:hover{background:rgba(96,108,56,.7)}
-.indicadores button[aria-selected=true]{background:var(--oliva);transform:scaleY(1.3)}
+.indicadores button{width:clamp(28px,3vw,40px);height:5px;border-radius:999px;border:0;background:var(--sobre-secao-fraco);cursor:pointer;padding:0;transition:background .3s,transform .3s}
+.indicadores button:hover{background:var(--sobre-secao-2)}
+.indicadores button[aria-selected=true]{background:var(--sobre-secao);transform:scaleY(1.3)}
 
 /* Fontes */
 .grade-fontes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--gap);align-content:start}
@@ -2477,7 +2478,7 @@ CSS_SINO = """
   --oliva:#0C6E47;--oliva-escuro:#09512F;--verde:#D8EEE2;--verde-suave:#CFE8DC;--verde-texto:#1F8E5F;
   --marfim:#F5FAF7;--titulo:#F5FAF7;--carimbo:#09512F;--tinta:#0F1E16;--traco:#F6C445;
   --sobre-secao:rgba(245,250,247,.92);--sobre-secao-2:rgba(245,250,247,.86);
-  --sobre-secao-linha:rgba(245,250,247,.20);
+  --sobre-secao-linha:rgba(245,250,247,.20);--sobre-secao-fraco:rgba(245,250,247,.65);
   --card:#ffffff;--tinta-2:#4C5F55;--divisoria:rgba(15,30,22,.12);--neutro-bg:rgba(12,110,71,.08);--bom-bg:#DCF0E5;
   --sombra-card:0 12px 30px -16px rgba(9,81,47,.5);
   --vermelho:#CC3327;--verm-bg:#FDECEA;--verm-ink:#B3231C;--ambar-bg:#FDF3D6;--ambar-ink:#7A5A00;--bom:#0C6E47;
