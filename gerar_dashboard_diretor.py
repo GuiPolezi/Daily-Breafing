@@ -321,7 +321,7 @@ def gerar_html() -> str:
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
 </article>""")
         secao_dev = f"""
-<section class="secao" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
+<section class="secao rolavel" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Desenvolvimento", "desenvolvimento")}
     <div class="lado">
@@ -407,7 +407,7 @@ def gerar_html() -> str:
         else:
             corpo = f'<div class="grade larga graficos quatro bloco-elastico">{"".join(cartoes_g)}</div>'
         secao_evolucao = f"""
-<section class="secao" id="evolucao" data-scroll aria-labelledby="t-evolucao">
+<section class="secao rolavel" id="evolucao" data-scroll aria-labelledby="t-evolucao">
   <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Tendência", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>
   {nota_secao("historico", "Série de historico/metricas.jsonl, uma linha por dia. Dias sem coleta não aparecem; "
                            "métricas novas só existem a partir do dia em que passaram a ser gravadas.")}

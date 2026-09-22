@@ -727,6 +727,10 @@ CSS = """
   --oliva:#606c38;--oliva-escuro:#283618;--verde:#b8d86e;--verde-suave:#adcb67;--verde-texto:#9bb45c;
   --marfim:#fefae0;--titulo:#f6e3c5;--carimbo:#433c2c;--tinta:#1f1f1f;--traco:#f3991f;
   /* cards claros: papéis de cor sobre --card (contrastes medidos sobre #fefae0) */
+  /* Texto DIRETO sobre o fundo da secao (fora de card). O fundo muda por
+     tema, entao a cor tambem: no diario o fundo e ambar, no diretor verde,
+     e nenhuma cor unica passa em contraste nos dois. */
+  --sobre-secao:#2b2114;--sobre-secao-2:#43341f;--sobre-secao-linha:rgba(43,33,20,.22);
   --card:#fefae0;--tinta-2:#5c6446;--divisoria:rgba(40,54,24,.14);--neutro-bg:rgba(40,54,24,.08);--bom-bg:#e3eecd;
   --sombra-card:0 10px 30px -18px rgba(40,54,24,.35);
   --vermelho:#e0261b;--verm-bg:#fdecec;--verm-ink:#c1272d;--ambar-bg:#fff3d6;--ambar-ink:#855800;--bom:#3f6d17;
@@ -811,6 +815,11 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
    secao rolar. Aqui bloco-elastico passa a valer "altura natural".
    As classes do contrato continuam as mesmas (testes/test_layout.py). */
 .secao.rolavel>.bloco-elastico{flex:0 0 auto;min-height:auto}
+/* O canvas e position:absolute;inset:0;height:100%, entao so tem altura se
+   a caixa tiver. Enquanto a secao esticava, a caixa herdava altura do flex;
+   numa secao que rola ela precisa declarar a sua, senao o grafico vira uma
+   tira de 0px -- e o mesmo colapso de 17/09/2026, por outro caminho. */
+.secao.rolavel .grafico-caixa{min-height:clamp(160px,24vh,260px)}
 .secao.ativa{opacity:1;visibility:visible;transform:none;transition-delay:.06s,.06s,0s;z-index:1}
 .titulo-secao{font:400 var(--t-hero)/.95 var(--serif);color:var(--titulo);letter-spacing:-.01em;text-wrap:balance}
 .titulo-secao .l{display:block}
@@ -821,10 +830,10 @@ html:not(.gsap) .cel.nav:hover,html:not(.gsap) .cel.nav:focus-visible{transform:
 .secao-cabeca.dividida{display:flex;justify-content:space-between;align-items:flex-end;gap:12px var(--gap);flex-wrap:wrap}
 .secao-cabeca .lado{display:flex;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;gap:8px clamp(20px,2.6vw,44px);text-align:right;margin-left:auto;padding-bottom:.3em}
 .secao-cabeca.dividida .titulo-secao{line-height:1.05}  /* descendentes (ç, g) não podem ficar sob o conteúdo seguinte */
-.secao-cabeca .lado .kpi-numero{color:var(--oliva-escuro)}
-.secao-cabeca .lado .kpi-legenda{color:rgba(40,54,24,.62)}
+.secao-cabeca .lado .kpi-numero{color:var(--sobre-secao)}
+.secao-cabeca .lado .kpi-legenda{color:var(--sobre-secao-2)}
 .carimbo-briefing{font:400 clamp(20px,3vh,30px)/1 var(--serif);color:var(--titulo);white-space:nowrap}
-.nota-escura{flex:0 0 auto;font-size:13px;font-weight:600;color:rgba(40,54,24,.7)}
+.nota-escura{flex:0 0 auto;font-size:13px;font-weight:600;color:var(--sobre-secao-2)}
 .vazio{flex:1 1 auto;display:flex;align-items:center;justify-content:center;text-align:center;font:400 clamp(20px,3vh,28px)/1.3 var(--serif);color:rgba(246,227,197,.85);padding:var(--pad)}
 
 /* ---- cards ---- */
@@ -1064,7 +1073,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   font-size:var(--t-meta);line-height:1.45;color:var(--tinta-2)}
 .kpi-explica b{color:var(--tinta);font-weight:700}
 .kpi-explica .como{display:block;margin-top:3px;opacity:.85}
-.secao-nota{margin:2px 0 14px;font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);max-width:78ch}
+.secao-nota{margin:2px 0 14px;font-size:var(--t-meta);line-height:1.5;color:var(--sobre-secao);max-width:78ch}
 .secao-nota .tag-fonte{margin-right:6px;vertical-align:1px}
 
 /* ---- barras de distribuição (fila por sistema, por status, por dev) ---- */
@@ -1185,16 +1194,16 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   background:var(--ambar-bg);border-radius:14px;padding:11px 15px}
 
 /* ---- agenda do dia (Google Calendar) ---- */
-.agenda-lista{overflow:auto;display:grid;gap:8px;align-content:start}
+.agenda-lista{overflow:auto;display:grid;gap:8px;align-content:start;color:var(--sobre-secao)}
 .agenda-item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:baseline;
-  padding-bottom:7px;border-bottom:1px solid var(--divisoria)}
+  padding-bottom:7px;border-bottom:1px solid var(--sobre-secao-linha)}
 .agenda-item:last-child{border-bottom:0}
 .agenda-item.passou{opacity:.55}
 .agenda-item.agora{background:var(--ambar-bg);border-radius:12px;padding:8px 11px;border-bottom:0}
 .agenda-hora{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
 .agenda-titulo{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.agenda-dono{color:var(--tinta-2);font-size:var(--t-meta);white-space:nowrap}
-.agenda-meta{grid-column:2/-1;color:var(--tinta-2);font-size:var(--t-meta)}
+.agenda-dono{color:var(--sobre-secao-2);font-size:var(--t-meta);white-space:nowrap}
+.agenda-meta{grid-column:2/-1;color:var(--sobre-secao-2);font-size:var(--t-meta)}
 .agenda-faixa{font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
   background:var(--ambar-bg);border-radius:14px;padding:10px 14px;margin-top:10px}
 .agenda-faixa b{font-variant-numeric:tabular-nums}
@@ -2463,6 +2472,8 @@ CSS_SINO = """
   --creme:#F5FAF7;--mel:#0C6E47;--mel-claro:#F6C445;--mel-hover:#0a5c3b;--mel-deco:#0C6E47;
   --oliva:#0C6E47;--oliva-escuro:#09512F;--verde:#D8EEE2;--verde-suave:#CFE8DC;--verde-texto:#1F8E5F;
   --marfim:#F5FAF7;--titulo:#F5FAF7;--carimbo:#09512F;--tinta:#0F1E16;--traco:#F6C445;
+  --sobre-secao:rgba(245,250,247,.92);--sobre-secao-2:rgba(245,250,247,.86);
+  --sobre-secao-linha:rgba(245,250,247,.20);
   --card:#ffffff;--tinta-2:#4C5F55;--divisoria:rgba(15,30,22,.12);--neutro-bg:rgba(12,110,71,.08);--bom-bg:#DCF0E5;
   --sombra-card:0 12px 30px -16px rgba(9,81,47,.5);
   --vermelho:#CC3327;--verm-bg:#FDECEA;--verm-ink:#B3231C;--ambar-bg:#FDF3D6;--ambar-ink:#7A5A00;--bom:#0C6E47;

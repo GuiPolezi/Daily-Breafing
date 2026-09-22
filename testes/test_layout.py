@@ -74,6 +74,11 @@ VIEWPORTS = [
 # Quantas "telas" de rolagem interna uma seção pode custar antes de deixar de ser
 # um painel e virar uma página. Julgamento de design, não lei da física.
 LIMITE_DENSIDADE = 2.0
+# Uma secao .rolavel declara, de proposito, que e pagina e nao slide: ali o
+# esmagamento (o defeito que o limite de 2.0 guarda) nao acontece mais, porque
+# os blocos param de encolher. Continua havendo teto -- pagina infinita tambem e
+# defeito -- e ele e o que este arquivo ja chamava de "outra coisa": tres telas.
+LIMITE_DENSIDADE_ROLAVEL = 3.0
 
 # Um bloco elástico pode comprimir até aqui. Abaixo disso não se lê mais nada.
 MIN_ELASTICO = 140
@@ -264,13 +269,14 @@ def teste_densidade(pagina: str, secoes: dict[str, list[dict]],
         total = (sum(altura_bloco(b, largura, altura, rola) for b in blocos)
                  + gap * (len(blocos) - 1))
         densidade = total / disponivel
-        if densidade > LIMITE_DENSIDADE:
+        limite = LIMITE_DENSIDADE_ROLAVEL if rola else LIMITE_DENSIDADE
+        if densidade > limite:
             detalhe = ", ".join(
                 f'{b["grade"] or (b["classes"][0] if b["classes"] else b["tag"])}'
                 f'={int(altura_bloco(b, largura, altura, rola))}'
                 for b in blocos)
             falhar(f"{pagina} #{secao} em {rotulo}: {densidade:.1f} telas "
-                   f"(limite {LIMITE_DENSIDADE}) — precisa de {int(total)}px, "
+                   f"(limite {limite}{' rolável' if rola else ''}) — precisa de {int(total)}px, "
                    f"cabe {int(disponivel)}px. Blocos: {detalhe}")
 
 
