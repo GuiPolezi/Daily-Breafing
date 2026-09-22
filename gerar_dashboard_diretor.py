@@ -34,7 +34,7 @@ from dashboard_base import (
     data_do_briefing, dividir_briefing, esc, explica, fmt_num,
     grafico, grupo_fonte, json_inline, ler_historico, ler_json, logo_sino, markdown_para_html,
     menu_grade, nota_secao,
-    num_html, ranking_semanal, redigir_nomes, render_ranking, secao_vazia, serie_historico,
+    num_html, ranking_semanal, redigir_nomes, render_ranking, secao_agenda, secao_vazia, serie_historico,
     serie_tem_dado, seta_delta, status_fonte, tag_fonte, titulo_secao,
 )
 from gerar_dashboard import CAMPO_HISTORICO_SISTEMA, SERIE_SISTEMA, SISTEMAS_DESTAQUE, dic
@@ -47,9 +47,12 @@ FONTES = [
     ("email", "E-mail", "email.json"),
     ("helpdesk", "Help desk", "helpdesk.json"),
     ("licencas", "Licenças", "licencas.json"),
+    ("agenda", "Agenda", "agenda.json"),
 ]
 
-# Menu em blocos (tema SINO): seis, em duas linhas de três, como no mockup.
+# Menu em blocos (tema SINO). SEMPRE duas linhas: as colunas saem da contagem
+# (ver menu_grade abaixo), porque uma terceira linha transborda o .topo, que
+# tem altura fixa. Com 6 itens dá 3 colunas, como no mockup original.
 # "fontes" NAO entra no menu (decisão do Guilherme, 21/09/2026): a seção
 # continua existindo e continua alcançável pela roda do mouse, pelo teclado e
 # pelo link "fonte desatualizada" do carimbo -- ela só não ocupa um bloco.
@@ -58,7 +61,7 @@ FONTES = [
 MENU_ORDEM = [
     ("destaques", "Panorama"), ("briefing", "Leitura"), ("suporte", "Suporte"),
     ("desenvolvimento", "Desenv."), ("desenv-analise", "Análise"),
-    ("evolucao", "Tendência"),
+    ("evolucao", "Tendência"), ("agenda", "Agenda"),
 ]
 
 # Rótulos curtos do mockup para os sistemas em destaque. Sistema fora do mapa
@@ -98,6 +101,7 @@ def gerar_html() -> str:
 
     helpdesk, licencas = dados["helpdesk"], dados["licencas"]
     atend = dic((helpdesk or {}).get("atendimentos_ultimo_dia_util"))
+    secao_agenda_html = secao_agenda(dados["agenda"])
     fila = dic((helpdesk or {}).get("fila"))
     por_sistema = dic(fila.get("por_sistema"))
     idade = dic(fila.get("idade"))
@@ -446,7 +450,13 @@ def gerar_html() -> str:
         avisos += f'<a class="aviso grave" href="#fontes" data-alvo="fontes">{len(indisponiveis)} fonte(s) indisponível(is)</a>'
 
     marca_html = logo_sino(alvo="destaques", titulo="SINO Gestão")
-    menu_html = menu_grade(MENU_ORDEM, colunas=3)
+    # DUAS LINHAS, SEMPRE. O menu vive no .topo, que tem altura FIXA
+    # (--topo-h) e nenhum overflow declarado: uma terceira linha nao encolhe
+    # nada, ela transborda por cima do conteudo. Em 1536x639 -- o notebook que
+    # o CLAUDE.md registra como o que ja quebrou o layout -- --topo-h e 116px e
+    # tres linhas medem 131px. Com 6 itens dava 3 colunas (o valor historico);
+    # a formula mantem isso e absorve sozinha o proximo item do menu.
+    menu_html = menu_grade(MENU_ORDEM, colunas=-(-len(MENU_ORDEM) // 2))
 
     payload = {"labels": serie["labels"], "secao": "evolucao", "graficos": graficos_payload}
     script = f"<script>{JS_UI}</script>"
@@ -481,6 +491,7 @@ def gerar_html() -> str:
 {secao_briefing}
 {secao_suporte}
 {secao_dev}
+{secao_agenda_html}
 {secao_evolucao}
 {secao_fontes}
 </main>

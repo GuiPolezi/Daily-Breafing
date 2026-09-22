@@ -24,7 +24,7 @@ from dashboard_base import (
     ABELHA_SVG, AVISO_BASE_MUDOU, CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, FONTES_INFO,
     JS_CHARTS, JS_HEADER, JS_UI,
     MOSTRAR_RANKING, RAIZ, TRACO_SVG, badge_delta, barras_distribuicao,
-    base_status_comparavel, card_grafico,
+    base_status_comparavel, card_grafico, secao_agenda,
     cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, classificar_licenca,
     coletar_nomes_tecnicos, data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica,
@@ -42,6 +42,7 @@ FONTES = [
     ("email", "E-mail", "email.json"),
     ("helpdesk", "Help desk", "helpdesk.json"),
     ("licencas", "Licenças", "licencas.json"),
+    ("agenda", "Agenda", "agenda.json"),
 ]
 DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
 
@@ -82,13 +83,16 @@ def ler_relatorio() -> str | None:
 FAVO_ORDEM = [
     ("destaques", "Destaques"), ("briefing", "Briefing"), ("desenvolvimento", "Desenv."),
     ("desenv-analise", "Análise"), ("licencas", "Licenças"), ("evolucao", "Evolução"),
-    ("eficacia", "Suporte"), ("fontes", "Fontes"),
+    ("eficacia", "Suporte"), ("agenda", "Agenda"), ("fontes", "Fontes"),
 ]
 # (2,-1) estava livre em FAVO_COMPACTO e FAVO_CHEIO -- a divisão da seção
 # Desenvolvimento em duas coube no favo sem redesenhar o menu.
 FAVO_NAV = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia",
             (1, -1): "licencas", (0, -1): "briefing", (0, 0): "fontes",
-            (0, 1): "desenvolvimento", (2, -1): "desenv-analise"}
+            (0, 1): "desenvolvimento", (2, -1): "desenv-analise",
+            # (-2,1) era a unica celula livre no favo COMPACTO e tambem
+            # existe no CHEIO -- a agenda coube sem redesenhar o menu.
+            (-2, 1): "agenda"}
 
 
 # --- Montagem da página ------------------------------------------------------
@@ -108,6 +112,7 @@ def gerar_html() -> str:
         fontes[chave] = {"rotulo": rotulo, **status_fonte(d, erro, agora)}
 
     email, helpdesk, licencas = dados["email"], dados["helpdesk"], dados["licencas"]
+    secao_agenda_html = secao_agenda(dados["agenda"])
     atend = dic((helpdesk or {}).get("atendimentos_ultimo_dia_util"))
 
     # --- blocos novos do helpdesk (ausentes até o coletor rodar de novo)
@@ -707,6 +712,7 @@ def gerar_html() -> str:
 {secao_briefing}
 {secao_dev}
 {secao_licencas}
+{secao_agenda_html}
 {secao_evolucao}
 {secao_eficacia}
 {secao_fontes}

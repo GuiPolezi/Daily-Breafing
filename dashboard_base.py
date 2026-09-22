@@ -1052,6 +1052,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .tag-fonte.milldesk{background:#dcebf3;color:#1d5f80}
 .tag-fonte.imap{background:#e9e4f4;color:#4b3f75}
 .tag-fonte.licencas{background:var(--ambar-bg);color:var(--ambar-ink)}
+.tag-fonte.gcal{background:#e2efe4;color:#2f5d3a}
 .kpi-explica{margin-top:10px;padding-top:9px;border-top:1px solid var(--divisoria);
   font-size:var(--t-meta);line-height:1.45;color:var(--tinta-2)}
 .kpi-explica b{color:var(--tinta);font-weight:700}
@@ -1165,6 +1166,21 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .mov-vazio{font-size:var(--t-meta);color:var(--tinta-2);font-style:italic;margin-top:8px}
 .aviso-escopo{margin-top:auto;font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
   background:var(--ambar-bg);border-radius:14px;padding:11px 15px}
+
+/* ---- agenda do dia (Google Calendar) ---- */
+.agenda-lista{overflow:auto;display:grid;gap:8px;align-content:start}
+.agenda-item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:baseline;
+  padding-bottom:7px;border-bottom:1px solid var(--divisoria)}
+.agenda-item:last-child{border-bottom:0}
+.agenda-item.passou{opacity:.55}
+.agenda-item.agora{background:var(--ambar-bg);border-radius:12px;padding:8px 11px;border-bottom:0}
+.agenda-hora{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.agenda-titulo{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agenda-dono{color:var(--tinta-2);font-size:var(--t-meta);white-space:nowrap}
+.agenda-meta{grid-column:2/-1;color:var(--tinta-2);font-size:var(--t-meta)}
+.agenda-faixa{font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
+  background:var(--ambar-bg);border-radius:14px;padding:10px 14px;margin-top:10px}
+.agenda-faixa b{font-variant-numeric:tabular-nums}
 
 /* ---- vindo de CSS_SEMANAL ---- */
 .pill.atual{background:var(--bom-bg);color:var(--bom)}
@@ -1808,6 +1824,136 @@ def secao_vazia(id_: str, titulo: str, mensagem: str) -> str:
             f'<p class="vazio bloco-elastico">{mensagem}</p></section>')
 
 
+def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda") -> str:
+    """Seção 'Agenda do dia'. Usada pelo diário e pelo diretor -- uma só, de
+    propósito: foi o CSS duplicado entre páginas que quebrou o layout antes.
+
+    Tolera agenda ausente, com erro ou sem evento: nunca levanta exceção, como
+    exige a degradação do pipeline. Todo filho direto de .secao declara o
+    contrato de flex (bloco-fixo / bloco-elastico).
+    """
+    # Com AGENDA_CALENDARIOS='*' o nome do calendário É o nome de uma pessoa
+    # ("Roberto", "Ketlyn", "Guilherme Polezi"), e o id de um calendário pessoal
+    # é um e-mail. Com o ranking desligado, nada disso pode chegar ao HTML --
+    # inclusive dentro de texto livre como `erro` e `aviso`, que citam o
+    # calendário pelo nome ou pelo id. redigir_nomes() não alcança aqui.
+    mostrar_donos = MOSTRAR_RANKING
+    detalhe_oculto = " O detalhe está em dados/agenda.json (omitido aqui porque cita calendários)."
+
+    if not isinstance(agenda, dict) or not agenda:
+        return secao_vazia(id_, titulo, "Fonte indisponível: agenda.")
+    if agenda.get("erro"):
+        return secao_vazia(id_, titulo, f"Fonte indisponível: {agenda['erro']}"
+                           if mostrar_donos else "Fonte indisponível: agenda." + detalhe_oculto)
+
+    # `or []` só cobre valor falsy. Uma string não vazia, um dict, ou uma lista
+    # com itens que não são dict passariam direto e quebrariam no primeiro
+    # .get() -- e a exceção NÃO ficaria contida nesta seção: sobe e derruba a
+    # página inteira, trocando e-mail, Milldesk e licenças por uma página de
+    # erro. Degradação é por seção neste projeto, então filtramos na entrada.
+    def so_dicts(valor) -> list[dict]:
+        return [x for x in valor if isinstance(x, dict)] if isinstance(valor, list) else []
+
+    def inteiro(valor) -> int:
+        try:
+            return int(valor)
+        except (TypeError, ValueError):
+            return 0
+
+    eventos = so_dicts(agenda.get("eventos"))
+    dia_inteiro = so_dicts(agenda.get("dia_inteiro"))
+    if not eventos and not dia_inteiro:
+        return secao_vazia(id_, titulo, "Nenhum compromisso hoje.")
+
+    # Mesmo bloco ".lado" que as outras seções usam no cabeçalho -- nenhuma
+    # classe nova: componente novo por página foi o que fez o layout divergir.
+    def medida(valor, legenda: str) -> str:
+        return (f'<div class="kpi-medida"><p class="kpi-numero menor">{esc(valor)}</p>'
+                f'<p class="kpi-legenda">{esc(legenda)}</p></div>')
+
+    horas, minutos = divmod(inteiro(agenda.get("minutos_ocupados")), 60)
+    medidas = [medida(len(eventos), "compromissos hoje")]
+    if agenda.get("total_meus") is not None and inteiro(agenda["total_meus"]) != len(eventos):
+        medidas.append(medida(inteiro(agenda["total_meus"]), "na sua agenda"))
+    medidas.append(medida(f"{horas}h{minutos:02d}", "ocupadas"))
+    sintese = f'<div class="lado">{"".join(medidas)}</div>'
+
+    faixa_dia = ""
+    if dia_inteiro:
+        itens = "; ".join(
+            f"{esc(d.get('titulo', ''))}" + (
+                f" ({esc(', '.join(str(c) for c in d['calendarios']))})"
+                if mostrar_donos and isinstance(d.get("calendarios"), list)
+                and d["calendarios"] else "")
+            for d in dia_inteiro)
+        if itens:
+            faixa_dia = f'<p class="agenda-faixa bloco-fixo"><b>Dia inteiro:</b> {itens}</p>'
+
+    linhas = []
+    for e in eventos:
+        classes = "agenda-item"
+        if e.get("em_andamento"):
+            classes += " agora"
+        elif e.get("ja_passou"):
+            classes += " passou"
+        # Marcador de duração zero mostra um horário só -- "14:30–14:30" seria ruído.
+        hora = esc(e.get("inicio") or "")
+        if not e.get("marcador") and e.get("fim"):
+            hora += "–" + esc(e["fim"])
+        if e.get("comeca_antes_de_hoje"):
+            hora = "←" + hora
+        if e.get("termina_depois_de_hoje"):
+            hora += "→"
+
+        brutos = e.get("calendarios")
+        donos = ([str(d) for d in brutos if d]
+                 if mostrar_donos and isinstance(brutos, list) else [])
+        meta = [p for p in (esc(e.get("local") or ""),
+                            "reunião online" if e.get("reuniao_online") else "") if p]
+        linhas.append(
+            f'<div class="{classes}">'
+            f'<span class="agenda-hora">{hora}</span>'
+            f'<span class="agenda-titulo" title="{esc(e.get("titulo") or "")}">'
+            f'{esc(e.get("titulo") or "(sem título)")}</span>'
+            f'<span class="agenda-dono">{esc(" · ".join(donos))}</span>'
+            + (f'<span class="agenda-meta">{" · ".join(meta)}</span>' if meta else "")
+            + "</div>")
+
+    janela = agenda.get("maior_janela_livre")
+    janela = janela if isinstance(janela, dict) else {}
+    faixa_janela = ""
+    if janela.get("inicio"):
+        jh, jm = divmod(inteiro(janela.get("minutos")), 60)
+        faixa_janela = (
+            f'<p class="agenda-faixa bloco-fixo"><b>Maior janela livre:</b> '
+            f'{esc(janela["inicio"])}–{esc(janela["fim"])} '
+            f'({jh}h{jm:02d}) · expediente {esc(agenda.get("expediente") or "")}</p>')
+
+    lista_cal = agenda.get("calendarios")
+    quantos = len(lista_cal) if isinstance(lista_cal, list) else 0
+    principal = agenda.get("calendario_principal")
+    if not mostrar_donos:
+        principal = None       # o nome do calendário principal também é de pessoa
+    texto_nota = (f"{quantos} calendário(s) consultado(s)"
+                  + (f"; horas ocupadas e janela livre são só de “{principal}”." if principal
+                     else "; horas ocupadas e janela livre saem só do calendário principal."))
+    if agenda.get("aviso"):
+        # O aviso cita os calendários pelo nome -- mesmo gate dos donos.
+        texto_nota += (f" AVISO: {agenda['aviso']}" if mostrar_donos
+                       else " AVISO: a configuração de calendários precisa de atenção."
+                            + detalhe_oculto)
+    return f"""
+<section class="secao" id="{id_}" data-scroll aria-labelledby="t-{id_}">
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao(titulo, id_)}{sintese}</header>
+  {nota_secao("gcal", texto_nota)}
+  {faixa_dia}
+  <div class="agenda-lista bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Compromissos de hoje">
+    {"".join(linhas) or '<p class="vazio">Nenhum compromisso com horário hoje.</p>'}
+  </div>
+  {faixa_janela}
+</section>"""
+
+
 def render_ranking(nomes: list, valores: list) -> str:
     vals = []
     for v in valores:
@@ -1846,10 +1992,27 @@ FONTES_INFO: dict[str, tuple[str, str, str]] = {
     "historico": ("Histórico local", "",
                   "historico/metricas.jsonl — uma linha por dia, gravada por arquivar.py "
                   "a partir das coletas anteriores."),
+    "gcal": ("Google Agenda", "gcal",
+             "Google Calendar API, somente leitura. Eventos de hoje dos calendários que a "
+             "conta enxerga; recorrências expandidas pelo próprio Google."),
 }
 
 # chave -> (fonte, o que a métrica é, como ela é calculada)
 METRICAS: dict[str, tuple[str, str, str]] = {
+    "agenda_eventos": ("gcal", "Compromissos de hoje nos calendários consultados.",
+                       "Google Calendar API com singleEvents=true (o Google expande as "
+                       "recorrências). Fora: cancelados, os que você recusou e o marcador "
+                       "automático de local de trabalho. Evento que aparece em vários "
+                       "calendários vira uma linha só, com todos os donos."),
+    "agenda_ocupado": ("gcal", "Tempo do dia já comprometido na SUA agenda.",
+                       "Soma a duração dos eventos do calendário principal "
+                       "(AGENDA_CALENDARIO_PRINCIPAL). Os demais calendários aparecem na "
+                       "lista mas não entram nesta conta, senão o número viraria o tempo "
+                       "da empresa inteira. Marcador de duração zero não soma."),
+    "agenda_janela": ("gcal", "Maior bloco livre seguido dentro do expediente.",
+                      "Funde os compromissos do calendário principal e procura o maior "
+                      "buraco dentro de AGENDA_EXPEDIENTE. Buraco menor que "
+                      "AGENDA_JANELA_MINIMA não conta como janela."),
     "fila_total": ("milldesk", "Todos os chamados em aberto no Milldesk, de todos os técnicos.",
                    "Em aberto aqui quer dizer: qualquer status que não seja Fechado. O coletor pede a "
                    "lista de status à própria API e consulta todos, menos os de HELPDESK_STATUS_EXCLUIDOS."),
