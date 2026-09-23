@@ -53,15 +53,14 @@ FONTES = [
 # Menu em blocos (tema SINO). SEMPRE duas linhas: as colunas saem da contagem
 # (ver menu_grade abaixo), porque uma terceira linha transborda o .topo, que
 # tem altura fixa. Com 6 itens dá 3 colunas, como no mockup original.
-# "fontes" NAO entra no menu (decisão do Guilherme, 21/09/2026): a seção
-# continua existindo e continua alcançável pela roda do mouse, pelo teclado e
-# pelo link "fonte desatualizada" do carimbo -- ela só não ocupa um bloco.
+# "fontes" voltou ao menu, como último bloco (decisão do Guilherme, 23/09/2026;
+# em 21/09 tinha saído). Com 8 itens ficam 4 colunas, a mesma largura dos 7.
 # Os ids "briefing" e "evolucao" são mantidos porque o JS reaproveitado depende
 # deles (slider e gráficos).
 MENU_ORDEM = [
     ("destaques", "Panorama"), ("briefing", "Leitura"), ("suporte", "Suporte"),
     ("desenvolvimento", "Desenv."), ("desenv-analise", "Análise"),
-    ("evolucao", "Tendência"), ("agenda", "Agenda"),
+    ("agenda", "Agenda"), ("evolucao", "Tendência"), ("fontes", "Fontes"),
 ]
 
 # Rótulos curtos do mockup para os sistemas em destaque. Sistema fora do mapa
