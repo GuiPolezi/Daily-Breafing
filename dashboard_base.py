@@ -2589,6 +2589,10 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
    "sobre-secao", nao as de dentro do card, senao some no fundo */
 .secao > .kpi-explica{color:var(--sobre-secao-2);border-top-color:var(--sobre-secao-linha)}
 .secao > .kpi-explica b{color:var(--sobre-secao)}
+/* etiqueta de fonte sem classe propria (ex.: "Histórico local") na nota da
+   secao: o fundo translucido da base some no verde -- fundo solido claro,
+   como as etiquetas Milldesk/IMAP/licencas ja tem */
+.secao-nota .tag-fonte[class="tag-fonte"]{background:var(--gelo);color:var(--verde-fundo)}
 .card-sino:hover{transform:translateY(-3px);box-shadow:0 20px 38px -18px rgba(9,81,47,.6)}
 
 /* ---- componentes da base que tinham cor cravada ---- */
