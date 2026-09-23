@@ -2585,6 +2585,10 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
 .card-sino .badge{align-self:center}
 .sino-rodape{font-size:var(--t-meta);text-align:center}
 .card-sino .kpi-explica{width:100%;text-align:left;margin-top:auto}
+/* explicacao solta na secao (fora de card) fica sobre o verde: usa as cores
+   "sobre-secao", nao as de dentro do card, senao some no fundo */
+.secao > .kpi-explica{color:var(--sobre-secao-2);border-top-color:var(--sobre-secao-linha)}
+.secao > .kpi-explica b{color:var(--sobre-secao)}
 .card-sino:hover{transform:translateY(-3px);box-shadow:0 20px 38px -18px rgba(9,81,47,.6)}
 
 /* ---- componentes da base que tinham cor cravada ---- */
