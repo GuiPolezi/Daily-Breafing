@@ -387,21 +387,27 @@ def coletar_nomes_tecnicos(historico: list[dict], helpdesk: dict | None) -> set[
             if isinstance(pt, dict):
                 nomes.update(str(k) for k in pt)
     if helpdesk:
-        pt = (helpdesk.get("atendimentos_ultimo_dia_util") or {}).get("por_tecnico")
+        # Campo de tipo errado (string, lista...) não pode derrubar a página:
+        # "x or {}" deixa passar qualquer valor verdadeiro, por isso isinstance.
+        atend = helpdesk.get("atendimentos_ultimo_dia_util")
+        pt = atend.get("por_tecnico") if isinstance(atend, dict) else None
         if isinstance(pt, dict):
             nomes.update(str(k) for k in pt)
-        for item in helpdesk.get("contagem_por_tecnico") or []:
+        contagem = helpdesk.get("contagem_por_tecnico")
+        for item in contagem if isinstance(contagem, list) else []:
             if isinstance(item, dict) and item.get("agent"):
                 nomes.add(str(item["agent"]))
         if isinstance(helpdesk.get("por_agente"), dict):
             nomes.update(str(k) for k in helpdesk["por_agente"])
-        for nome in helpdesk.get("agentes_monitorados") or []:
+        agentes = helpdesk.get("agentes_monitorados")
+        for nome in agentes if isinstance(agentes, list) else []:
             nomes.add(str(nome))
         desenvolvimento = helpdesk.get("desenvolvimento")
         if isinstance(desenvolvimento, dict):
             if isinstance(desenvolvimento.get("por_dev"), dict):
                 nomes.update(str(k) for k in desenvolvimento["por_dev"])
-            for nome in desenvolvimento.get("devs_monitorados") or []:
+            devs = desenvolvimento.get("devs_monitorados")
+            for nome in devs if isinstance(devs, list) else []:
                 nomes.add(str(nome))
         fila = helpdesk.get("fila")
         if isinstance(fila, dict) and isinstance(fila.get("por_tecnico"), dict):
@@ -2381,19 +2387,20 @@ LOSANGO_SVG = """<svg class="sino-losango-svg" viewBox="0 0 100 100" aria-hidden
 </svg>"""
 
 
-def logo_sino(alvo: str = "destaques", titulo: str = "SINO Gestão") -> str:
-    """Marca do tema SINO: losango + "SINO", com o espaço do "Gestão" reservado.
+def logo_sino(alvo: str = "destaques", titulo: str = "SINO Gestão", sub: str = "Gestão") -> str:
+    """Marca do tema SINO: losango + "SINO", com o espaço do subtítulo reservado.
 
     O espaço do subtítulo existe no layout desde o primeiro quadro (altura fixa,
     opacidade zero). É o que garante que a animação de hover não empurre nada:
-    o losango e o "Gestão" animam DENTRO de caixas que nunca mudam de tamanho.
+    o losango e o subtítulo animam DENTRO de caixas que nunca mudam de tamanho.
+    `sub` é o que aparece no hover: "Gestão" no diretor, "Operação" no diário.
     """
     return f"""
 <a class="marca marca-sino" href="#{esc(alvo)}" data-alvo="{esc(alvo)}" aria-label="{esc(titulo)} — início">
   <span class="sino-logo">{LOSANGO_SVG}</span>
   <span class="sino-texto">
     <span class="sino-nome">SINO</span>
-    <span class="sino-sub"><span class="sino-sub-txt">Gestão</span></span>
+    <span class="sino-sub"><span class="sino-sub-txt">{esc(sub)}</span></span>
   </span>
 </a>"""
 
@@ -2469,7 +2476,8 @@ def card_sino(titulo: str, valor, sub: str = "", rodape: str = "", delta: str = 
 
 CSS_SINO = """
 /* ==== TEMA SINO ============================================================
-   Aplicado depois de CSS e so no dashboard_diretor. Primeiro a paleta (os
+   Aplicado depois de CSS no dashboard_diretor e no dashboard (diario) -- o
+   financeiro e o semanal seguem no tema mel. Primeiro a paleta (os
    mesmos nomes de variavel da base, com valores novos), depois os componentes
    que so existem aqui.                                                       */
 :root{
@@ -2589,6 +2597,9 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
    "sobre-secao", nao as de dentro do card, senao some no fundo */
 .secao > .kpi-explica{color:var(--sobre-secao-2);border-top-color:var(--sobre-secao-linha)}
 .secao > .kpi-explica b{color:var(--sobre-secao)}
+/* rotulo solto na secao ("Por equipe", "Por desenvolvedor"): --oliva aqui E o
+   verde do fundo, entao ele sumia por inteiro */
+.secao > .kpi-rotulo{color:var(--sobre-secao)}
 /* etiqueta de fonte sem classe propria (ex.: "Histórico local") na nota da
    secao: o fundo translucido da base some no verde -- fundo solido claro,
    como as etiquetas Milldesk/IMAP/licencas ja tem */
@@ -2608,7 +2619,10 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
   .menu-sino-caixa{flex:1 0 100%}
   /* aqui 1fr e correto: .menu-sino-caixa e flex:1 0 100% e o grid tem width:100%,
      ou seja, largura definida -- o caso oposto ao de cima. */
-  .menu-sino{width:100%;grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* !important: menu_grade() escreve a contagem de colunas INLINE, e inline
+     vence qualquer media query -- com 5 colunas de >=78px o menu estourava a
+     tela do celular. Aqui o .topo tem height:auto, entao 3 linhas cabem. */
+  .menu-sino{width:100%;grid-template-columns:repeat(3,minmax(0,1fr)) !important}
   .menu-sino .grid-item{min-width:0;min-height:38px}
   .faixa-grupo-texto{max-width:none}
 }
