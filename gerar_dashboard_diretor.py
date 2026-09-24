@@ -44,7 +44,6 @@ SAIDA = RAIZ / "dashboard_diretor.html"
 DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
 
 FONTES = [
-    ("email", "E-mail", "email.json"),
     ("helpdesk", "Help desk", "helpdesk.json"),
     ("licencas", "Licenças", "licencas.json"),
     ("agenda", "Agenda", "agenda.json"),
@@ -421,7 +420,7 @@ def gerar_html() -> str:
     # ============================================================= 6. FONTES
     rotulo_estado = {"ok": "Atualizada", "desatualizada": "Desatualizada", "indisponivel": "Indisponível"}
     classe_estado = {"ok": "ok", "desatualizada": "aviso", "indisponivel": "grave"}
-    origem_da_fonte = {"email": "imap", "helpdesk": "milldesk", "licencas": "licencas"}
+    origem_da_fonte = {"helpdesk": "milldesk", "licencas": "licencas"}
     from dashboard_base import FONTES_INFO
     cards_fontes = []
     for i, (chave, f) in enumerate(fontes.items()):

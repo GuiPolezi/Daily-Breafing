@@ -138,7 +138,7 @@ revisores (correção + segurança)** → só então a próxima.
 - Ferramentas (Python conta, IA redige): `contar_chamados(filtros)`,
   `distribuicao(campo, filtros)`, `serie_por_mes(filtros)`,
   `listar_chamados(filtros, limite)`, `detalhe_do_chamado(id)`, `resumo_do_dia()`
-  (lê `email.json`, `licencas.json`, `agenda.json`, `helpdesk.json`).
+  (lê `licencas.json`, `agenda.json`, `helpdesk.json`).
   Filtros: local, sistema, status, técnico, categoria, período, texto.
 - Prompt do sistema: nunca citar número que não veio de uma ferramenta.
 - **Segurança:** senha obrigatória (`CHAT_SENHA`) digitada no painel e guardada

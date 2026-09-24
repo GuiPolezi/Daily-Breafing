@@ -1,7 +1,7 @@
 # Briefing Diário — Agente de resumo matinal
 
 Um agente que roda todo dia de manhã, coleta informações de várias fontes
-(e-mail, licenças, help desk, WhatsApp) e gera um relatório único em Markdown
+(licenças, help desk, WhatsApp) e gera um relatório único em Markdown
 usando o Claude Code em modo não-interativo (headless).
 
 ## Como funciona (arquitetura)
@@ -43,7 +43,6 @@ traz a quebra individual. A comparação ignora acentos e maiúsculas.
 Teste cada coletor individualmente antes de agendar:
 
 ```bash
-python coletores/check_email.py
 python coletores/check_helpdesk.py
 python coletores/check_licencas.py   # requer adaptação ao seu sistema
 cat dados/*.json
@@ -176,7 +175,7 @@ Para gerar o dashboard manualmente: `python gerar_dashboard.py`.
 
 Os dois rodam **todo dia**, logo depois do briefing diário, e **não executam
 coletores**: reaproveitam os JSONs que `briefing.bat` já coletou naquela manhã.
-O Milldesk e o IMAP continuam sendo acessados uma vez por dia.
+O Milldesk continua sendo acessado uma vez por dia.
 
 `briefing.bat` chama os dois no final com o argumento `sem-abrir` (para não
 abrir três abas). Rodando um deles sozinho, o navegador abre normalmente:
@@ -245,7 +244,6 @@ Para gerar manualmente: `python gerar_dashboard_semanal.py`.
 
 | Fonte      | Dificuldade | Caminho                                                        |
 |------------|-------------|----------------------------------------------------------------|
-| E-mail     | Fácil       | IMAP (funciona com Gmail, Outlook, e-mail corporativo)          |
 | Help desk  | Fácil       | API REST (Zendesk, Freshdesk, GLPI, Movidesk... todos têm)      |
 | Licenças   | Média       | API interna se existir; senão scraping (frágil) ou export CSV   |
 | WhatsApp   | Difícil     | Só oficial via WhatsApp Business Cloud API + webhook. Sem API oficial p/ conta pessoal |
@@ -253,5 +251,4 @@ Para gerar manualmente: `python gerar_dashboard_semanal.py`.
 ## Segurança
 
 - Nunca commite o `.env` (já está no `.gitignore`).
-- Use senhas de aplicativo (Gmail/Outlook exigem para IMAP), nunca sua senha principal.
 - Os coletores são somente-leitura: o agente não responde e-mails nem fecha tickets. Comece assim; expanda depois que confiar no sistema.

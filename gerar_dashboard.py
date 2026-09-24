@@ -39,7 +39,6 @@ SAIDA = RAIZ / "dashboard.html"
 
 # (chave, rótulo, arquivo)
 FONTES = [
-    ("email", "E-mail", "email.json"),
     ("helpdesk", "Help desk", "helpdesk.json"),
     ("licencas", "Licenças", "licencas.json"),
     ("agenda", "Agenda", "agenda.json"),
@@ -106,7 +105,7 @@ def gerar_html() -> str:
         dados[chave] = d
         fontes[chave] = {"rotulo": rotulo, **status_fonte(d, erro, agora)}
 
-    email, helpdesk, licencas = dados["email"], dados["helpdesk"], dados["licencas"]
+    helpdesk, licencas = dados["helpdesk"], dados["licencas"]
     secao_agenda_html = secao_agenda(dados["agenda"])
     atend = dic((helpdesk or {}).get("atendimentos_ultimo_dia_util"))
 
@@ -583,17 +582,13 @@ def gerar_html() -> str:
     # ================================================================ 7. FONTES
     rotulo_estado = {"ok": "Atualizada", "desatualizada": "Desatualizada", "indisponivel": "Indisponível"}
     classe_estado = {"ok": "ok", "desatualizada": "aviso", "indisponivel": "grave"}
-    origem_da_fonte = {"email": "imap", "helpdesk": "milldesk", "licencas": "licencas"}
+    origem_da_fonte = {"helpdesk": "milldesk", "licencas": "licencas"}
     cards_fontes = []
     for i, (chave, f) in enumerate(fontes.items()):
         estado = f["estado"]
         d = dados[chave] or {}
         stats = ""
-        if chave == "email" and d:
-            stats = (f'<ul class="mini-stats"><li><b>{fmt_num(d.get("nao_lidos"))}</b><span>não lidos</span></li>'
-                     f'<li><b>{fmt_num(d.get("recebidos_hoje"))}</b><span>recebidos hoje</span></li>'
-                     f'<li><b>{fmt_num(d.get("spam_hoje"))}</b><span>spam hoje</span></li></ul>')
-        elif chave == "helpdesk" and d:
+        if chave == "helpdesk" and d:
             agentes_lista = d.get("agentes_monitorados") if isinstance(d.get("agentes_monitorados"), list) else []
             stats = (f'<ul class="mini-stats"><li><b>{fmt_num(d.get("fila_total_abertos"))}</b><span>na fila</span></li>'
                      f'<li><b>{fmt_num(d.get("meus_abertos"))}</b><span>abertos da equipe</span></li>'

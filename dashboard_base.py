@@ -439,7 +439,6 @@ SERIES_HISTORICO = {
     "idade_90": "fila_mais_90",
     "dev": "dev_atribuidos",
     "dev_status": "dev_em_status",
-    "email_nao_lidos": "email_nao_lidos",
     "lic_vencendo": "lic_vencendo",
     "lic_vencidas": "lic_vencidas_recentes",
 }
@@ -1073,7 +1072,6 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   text-transform:uppercase;padding:2px 9px;border-radius:999px;background:var(--neutro-bg);color:var(--tinta-2);white-space:nowrap}
 .tag-fonte::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.7}
 .tag-fonte.milldesk{background:#dcebf3;color:#1d5f80}
-.tag-fonte.imap{background:#e9e4f4;color:#4b3f75}
 .tag-fonte.licencas{background:var(--ambar-bg);color:var(--ambar-ink)}
 .tag-fonte.gcal{background:#e2efe4;color:#2f5d3a}
 .kpi-explica{margin-top:10px;padding-top:9px;border-top:1px solid var(--divisoria);
@@ -2022,8 +2020,6 @@ FONTES_INFO: dict[str, tuple[str, str, str]] = {
     "milldesk": ("Milldesk", "milldesk",
                  "Help desk da empresa (API v1). Chamados abertos, status, categoria, "
                  "subcategoria, técnico responsável, prioridade e há quanto tempo estão abertos."),
-    "imap": ("Caixa de e-mail", "imap",
-             "Leitura direta da caixa por IMAP: mensagens não lidas, recebidas hoje e spam."),
     "licencas": ("Sistema de licenças", "licencas",
                  "Painel web interno de licenças: cliente, sistema e data de vencimento."),
     "historico": ("Histórico local", "",
@@ -2097,12 +2093,6 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                      "Tabela 'Vencimento Próximo' do painel, sem homologação/teste."),
     "lic_antigas": ("licencas", "Licenças vencidas há mais de 60 dias, fora da lista de ação.",
                     "Contagem do que sobra da tabela 'Vencidas' além da janela de 60 dias."),
-    "email_nao_lidos": ("imap", "Mensagens não lidas na caixa de entrada.",
-                        "Busca UNSEEN na pasta INBOX."),
-    "email_recebidos": ("imap", "Mensagens recebidas hoje.",
-                        "Busca por data de hoje na pasta INBOX."),
-    "email_spam": ("imap", "Mensagens que caíram no spam hoje.",
-                   "Busca por data de hoje na pasta configurada em EMAIL_SPAM_FOLDER."),
     "evolucao": ("historico", "Série diária das métricas já coletadas.",
                  "Uma linha por dia em historico/metricas.jsonl; dias sem coleta não aparecem."),
     "ranking": ("historico", "Atendimentos fechados por técnico, somados nos dias úteis registrados.",
@@ -2114,7 +2104,7 @@ METRICAS: dict[str, tuple[str, str, str]] = {
 
 
 def tag_fonte(chave: str) -> str:
-    """Etiqueta com o nome da fonte de origem (Milldesk, IMAP, licenças...)."""
+    """Etiqueta com o nome da fonte de origem (Milldesk, licenças, agenda...)."""
     rotulo, classe, descricao = FONTES_INFO.get(chave, (chave, "", ""))
     classe = f" {classe}" if classe else ""
     return f'<span class="tag-fonte{classe}" title="{esc(descricao)}">{esc(rotulo)}</span>'
@@ -2605,7 +2595,7 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
 .secao > .kpi-rotulo{color:var(--sobre-secao)}
 /* etiqueta de fonte sem classe propria (ex.: "Histórico local") na nota da
    secao: o fundo translucido da base some no verde -- fundo solido claro,
-   como as etiquetas Milldesk/IMAP/licencas ja tem */
+   como as etiquetas Milldesk/licencas ja tem */
 .secao-nota .tag-fonte[class="tag-fonte"]{background:var(--gelo);color:var(--verde-fundo)}
 .card-sino:hover{transform:translateY(-3px);box-shadow:0 20px 38px -18px rgba(9,81,47,.6)}
 

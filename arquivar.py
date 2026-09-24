@@ -57,7 +57,7 @@ def gravar_linha_do_dia(arquivo: Path, registro: dict) -> int:
     return len(linhas)
 
 
-def metricas_do_dia(email: dict, helpdesk: dict, licencas: dict) -> dict:
+def metricas_do_dia(helpdesk: dict, licencas: dict) -> dict:
     atend = dic(helpdesk.get("atendimentos_ultimo_dia_util"))
     fila = dic(helpdesk.get("fila"))
     por_sistema = dic(fila.get("por_sistema"))
@@ -67,10 +67,6 @@ def metricas_do_dia(email: dict, helpdesk: dict, licencas: dict) -> dict:
 
     return {
         "data": date.today().isoformat(),
-        # E-mail
-        "email_nao_lidos": email.get("nao_lidos"),
-        "email_recebidos": email.get("recebidos_hoje"),
-        "email_spam": email.get("spam_hoje"),
         # Help desk (fila)
         "fila_abertos": helpdesk.get("fila_total_abertos"),
         # Mesma fila no recorte de status que valia antes de 17/09/2026 ("tudo
@@ -154,11 +150,10 @@ def retrato_licencas(licencas: dict) -> dict | None:
 
 
 def main() -> None:
-    email = ler("email.json")
     helpdesk = ler("helpdesk.json")
     licencas = ler("licencas.json")
 
-    metricas = metricas_do_dia(email, helpdesk, licencas)
+    metricas = metricas_do_dia(helpdesk, licencas)
     total = gravar_linha_do_dia(ARQUIVO, metricas)
     print(f"OK -> {ARQUIVO} ({total} dias registrados)")
 
