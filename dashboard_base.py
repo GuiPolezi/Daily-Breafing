@@ -1213,9 +1213,39 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .agenda-titulo{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agenda-dono{color:var(--sobre-secao-2);font-size:var(--t-meta);white-space:nowrap}
 .agenda-meta{grid-column:2/-1;color:var(--sobre-secao-2);font-size:var(--t-meta)}
-.agenda-faixa{font-size:var(--t-meta);line-height:1.5;color:var(--carimbo);
-  background:var(--ambar-bg);border-radius:14px;padding:10px 14px;margin-top:10px}
-.agenda-faixa b{font-variant-numeric:tabular-nums}
+.secao .agenda-lista{margin-top:clamp(4px,2.6vh,34px)}
+/* Pílula da fonte no desenho da agenda: branca, sem caixa alta. A etiqueta
+   gcal só aparece nesta seção, então as pílulas das outras seções não mudam. */
+.secao-nota .tag-fonte.gcal{background:#fff;color:#09512F;text-transform:none;letter-spacing:0;
+  font-size:11px;padding:7px 16px;margin-right:14px}
+.secao-nota:has(.tag-fonte.gcal){font-weight:700;font-size:11px}
+/* "Outros Eventos" -- eventos de dia inteiro, uma faixa com pontas em seta
+   por evento. Tons pastel: a cor identifica o evento sem brigar com o texto
+   escuro por cima. AGENDA_FAIXAS_CORES em Python tem que bater com a paleta. */
+:root{--faixa-0:#F9CFCB;--faixa-1:#D6F0B2;--faixa-2:#CDE6F7;--faixa-3:#E0D8F4;
+  --faixa-4:#FBDDB9;--faixa-5:#C6EBDA;--faixa-6:#F5E9AE;--faixa-7:#F4D3E5;--seta-faixa:14px}
+.agenda-outros{margin-top:clamp(10px,3.4vh,44px);color:var(--sobre-secao)}
+.agenda-outros-titulo{font:700 clamp(17px,2.6vh,24px)/1.2 var(--sans);color:var(--sobre-secao);margin:0 0 clamp(10px,2vh,22px)}
+.agenda-eventos{list-style:none;margin:0;padding:0 0 0 clamp(0px,1vw,14px);display:grid;gap:3px}
+.agenda-evento{background:var(--cor);color:#0F1E16;min-width:0;height:26px;display:flex;align-items:center;
+  padding:0 calc(var(--seta-faixa) + 12px) 0 calc(var(--seta-faixa) + 24px);font-size:14px;line-height:1;
+  clip-path:polygon(0 50%,var(--seta-faixa) 0,calc(100% - var(--seta-faixa)) 0,100% 50%,calc(100% - var(--seta-faixa)) 100%,var(--seta-faixa) 100%)}
+.agenda-evento span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agenda-mais{margin-top:3px}
+.agenda-mais>summary{list-style:none;cursor:pointer;display:flex;gap:18px;align-items:baseline;
+  padding:12px 0 8px clamp(12px,1.8vw,26px);font-size:var(--t-meta);font-weight:700;width:max-content;max-width:100%}
+.agenda-mais>summary::-webkit-details-marker{display:none}
+.agenda-mais-n{color:var(--sobre-secao-fraco)}
+.agenda-mais-acao{color:var(--ouro,#F6C445)}
+.agenda-mais-acao::after{content:attr(data-abrir)}
+.agenda-mais[open] .agenda-mais-acao::after{content:attr(data-fechar)}
+.agenda-mais>summary:hover .agenda-mais-acao,.agenda-mais>summary:focus-visible .agenda-mais-acao{text-decoration:underline}
+.agenda-mais>summary:focus-visible{outline:2px solid var(--ouro,#F6C445);outline-offset:3px;border-radius:6px}
+@media (max-width:899px){
+  :root{--seta-faixa:10px}
+  .agenda-evento{height:30px;font-size:13px;padding:0 calc(var(--seta-faixa) + 8px) 0 calc(var(--seta-faixa) + 12px)}
+  .agenda-eventos{padding-left:0}
+}
 
 /* ---- vindo de CSS_SEMANAL ---- */
 .pill.atual{background:var(--bom-bg);color:var(--bom)}
@@ -1859,7 +1889,13 @@ def secao_vazia(id_: str, titulo: str, mensagem: str) -> str:
             f'<p class="vazio bloco-elastico">{mensagem}</p></section>')
 
 
-def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda") -> str:
+# "Outros Eventos" da agenda: quantas faixas de dia inteiro aparecem antes do
+# "Mais N", e quantos tons a paleta --faixa-N tem (tem que bater com o CSS).
+AGENDA_FAIXAS_VISIVEIS = 2
+AGENDA_FAIXAS_CORES = 8
+
+
+def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda do Dia") -> str:
     """Seção 'Agenda do dia'. Usada pelo diário e pelo diretor -- uma só, de
     propósito: foi o CSS duplicado entre páginas que quebrou o layout antes.
 
@@ -1889,12 +1925,6 @@ def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda
     def so_dicts(valor) -> list[dict]:
         return [x for x in valor if isinstance(x, dict)] if isinstance(valor, list) else []
 
-    def inteiro(valor) -> int:
-        try:
-            return int(valor)
-        except (TypeError, ValueError):
-            return 0
-
     eventos = so_dicts(agenda.get("eventos"))
     dia_inteiro = so_dicts(agenda.get("dia_inteiro"))
     if not eventos and not dia_inteiro:
@@ -1906,23 +1936,38 @@ def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda
         return (f'<div class="kpi-medida"><p class="kpi-numero menor">{esc(valor)}</p>'
                 f'<p class="kpi-legenda">{esc(legenda)}</p></div>')
 
-    horas, minutos = divmod(inteiro(agenda.get("minutos_ocupados")), 60)
-    medidas = [medida(len(eventos), "compromissos hoje")]
-    if agenda.get("total_meus") is not None and inteiro(agenda["total_meus"]) != len(eventos):
-        medidas.append(medida(inteiro(agenda["total_meus"]), "na sua agenda"))
-    medidas.append(medida(f"{horas}h{minutos:02d}", "ocupadas"))
-    sintese = f'<div class="lado">{"".join(medidas)}</div>'
+    # Só o total do dia. "Na sua agenda", horas ocupadas e janela livre saíram
+    # da seção por decisão de design (24/09/2026); o coletor segue gravando os
+    # campos porque o prompt do briefing.bat ainda os usa no texto.
+    sintese = f'<div class="lado">{medida(len(eventos), "compromissos hoje")}</div>'
 
-    faixa_dia = ""
+    # Eventos de dia inteiro viram faixas coloridas ("Outros Eventos"). As
+    # primeiras AGENDA_FAIXAS_VISIVEIS ficam à mostra; o resto atrás de um
+    # <details> nativo -- sem JS, acessível por teclado. A cor vem da posição
+    # (ciclo de AGENDA_FAIXAS_CORES tons), então vizinhas nunca repetem. O
+    # calendário não aparece na faixa: o gate de nomes fica trivialmente cumprido.
+    def faixa(d: dict, i: int) -> str:
+        texto = str(d.get("titulo") or "(sem título)")
+        return (f'<li class="agenda-evento" style="--cor:var(--faixa-{i % AGENDA_FAIXAS_CORES})" '
+                f'title="{esc(texto)}"><span>{esc(texto)}</span></li>')
+
+    bloco_outros = ""
     if dia_inteiro:
-        itens = "; ".join(
-            f"{esc(d.get('titulo', ''))}" + (
-                f" ({esc(', '.join(str(c) for c in d['calendarios']))})"
-                if mostrar_donos and isinstance(d.get("calendarios"), list)
-                and d["calendarios"] else "")
-            for d in dia_inteiro)
-        if itens:
-            faixa_dia = f'<p class="agenda-faixa bloco-fixo"><b>Dia inteiro:</b> {itens}</p>'
+        visiveis = dia_inteiro[:AGENDA_FAIXAS_VISIVEIS]
+        resto = dia_inteiro[AGENDA_FAIXAS_VISIVEIS:]
+        mais = ""
+        if resto:
+            ocultas = "".join(faixa(d, AGENDA_FAIXAS_VISIVEIS + i) for i, d in enumerate(resto))
+            mais = (f'<details class="agenda-mais"><summary>'
+                    f'<span class="agenda-mais-n">Mais {len(resto)}</span>'
+                    f'<span class="agenda-mais-acao" data-abrir="Clique para expandir" '
+                    f'data-fechar="Clique para recolher"></span></summary>'
+                    f'<ul class="agenda-eventos">{ocultas}</ul></details>')
+        bloco_outros = (
+            f'<div class="agenda-outros bloco-fixo">'
+            f'<h3 class="agenda-outros-titulo">Outros Eventos</h3>'
+            f'<ul class="agenda-eventos">{"".join(faixa(d, i) for i, d in enumerate(visiveis))}</ul>'
+            f'{mais}</div>')
 
     linhas = []
     for e in eventos:
@@ -1954,38 +1999,22 @@ def secao_agenda(agenda: dict | None, id_: str = "agenda", titulo: str = "Agenda
             + (f'<span class="agenda-meta">{" · ".join(meta)}</span>' if meta else "")
             + "</div>")
 
-    janela = agenda.get("maior_janela_livre")
-    janela = janela if isinstance(janela, dict) else {}
-    faixa_janela = ""
-    if janela.get("inicio"):
-        jh, jm = divmod(inteiro(janela.get("minutos")), 60)
-        faixa_janela = (
-            f'<p class="agenda-faixa bloco-fixo"><b>Maior janela livre:</b> '
-            f'{esc(janela["inicio"])}–{esc(janela["fim"])} '
-            f'({jh}h{jm:02d}) · expediente {esc(agenda.get("expediente") or "")}</p>')
-
     lista_cal = agenda.get("calendarios")
     quantos = len(lista_cal) if isinstance(lista_cal, list) else 0
-    principal = agenda.get("calendario_principal")
-    if not mostrar_donos:
-        principal = None       # o nome do calendário principal também é de pessoa
-    texto_nota = (f"{quantos} calendário(s) consultado(s)"
-                  + (f"; horas ocupadas e janela livre são só de “{principal}”." if principal
-                     else "; horas ocupadas e janela livre saem só do calendário principal."))
+    texto_nota = f"{quantos} Calendário{'s' if quantos != 1 else ''} consultado{'s' if quantos != 1 else ''}"
     if agenda.get("aviso"):
         # O aviso cita os calendários pelo nome -- mesmo gate dos donos.
         texto_nota += (f" AVISO: {agenda['aviso']}" if mostrar_donos
                        else " AVISO: a configuração de calendários precisa de atenção."
                             + detalhe_oculto)
     return f"""
-<section class="secao" id="{id_}" data-scroll aria-labelledby="t-{id_}">
+<section class="secao rolavel" id="{id_}" data-scroll aria-labelledby="t-{id_}">
   <header class="secao-cabeca dividida bloco-fixo">{titulo_secao(titulo, id_)}{sintese}</header>
   {nota_secao("gcal", texto_nota)}
-  {faixa_dia}
   <div class="agenda-lista bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Compromissos de hoje">
     {"".join(linhas) or '<p class="vazio">Nenhum compromisso com horário hoje.</p>'}
   </div>
-  {faixa_janela}
+  {bloco_outros}
 </section>"""
 
 
