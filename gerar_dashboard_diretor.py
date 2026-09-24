@@ -250,10 +250,21 @@ def gerar_html() -> str:
     if not nomes_rank:
         secao_suporte = secao_vazia("suporte", "Suporte", "Sem registros de atendimentos no histórico.")
     else:
-        painel_idade = barras_distribuicao({
-            "Até 7 dias": idade.get("ate_7_dias"), "8 a 30 dias": idade.get("de_8_a_30_dias"),
-            "31 a 90 dias": idade.get("de_31_a_90_dias"), "Mais de 90 dias": idade.get("mais_de_90_dias"),
-        }, limite=4, criticos=("Mais de 90 dias",)) if idade else '<p class="dist-vazio">Sem dados de idade da fila.</p>'
+        # Um card por técnico monitorado (HELPDESK_AGENT_NAME). "abertos" vem do
+        # coletor e já conta todos os status menos os excluídos (hoje só Fechado).
+        # Com o ranking desligado, o nome vira "Técnico N" — mesma regra dos demais.
+        por_agente = dic((helpdesk or {}).get("por_agente"))
+        agentes = (helpdesk or {}).get("agentes_monitorados")
+        agentes = agentes if isinstance(agentes, list) else []  # string corrompida iteraria letra a letra
+        cards_tecnicos = [
+            card_sino(f"Tickets com {nome.split()[0]}" if MOSTRAR_RANKING else f"Técnico {i + 1}",
+                      dic(por_agente.get(nome)).get("abertos"),
+                      explicacao=explica("tickets_tecnico"), indice=i)
+            for i, nome in enumerate(agentes)
+            if isinstance(nome, str) and nome.strip()
+        ]
+        grade_tecnicos = (f'<div class="grade painel-exec bloco-fixo">{"".join(cards_tecnicos)}</div>'
+                          if cards_tecnicos else "")
         secao_suporte = f"""
 <section class="secao" id="suporte" data-scroll aria-labelledby="t-suporte">
   <header class="secao-cabeca dividida bloco-fixo">
@@ -262,18 +273,12 @@ def gerar_html() -> str:
       <p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
   </header>
   {nota_secao("milldesk", "Produtividade do suporte e estado da fila em aberto.")}
-  <div class="grade duas-colunas-secao bloco-elastico">
-    <article class="card card-ranking bloco-elastico" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3>{tag_fonte("historico")}</div>
-      {render_ranking(nomes_rank, valores_rank)}
-      {explica("ranking")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Idade dos chamados na fila</h3>{tag_fonte("milldesk")}</div>
-      {painel_idade}
-      {explica("idade_fila")}
-    </article>
-  </div>
+  <article class="card card-ranking bloco-elastico" data-scroll>
+    <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3>{tag_fonte("historico")}</div>
+    {render_ranking(nomes_rank, valores_rank)}
+    {explica("ranking")}
+  </article>
+  {grade_tecnicos}
 </section>"""
 
     # ============================================================= 4. DESENVOLVIMENTO

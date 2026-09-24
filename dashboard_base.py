@@ -2107,6 +2107,9 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                  "Uma linha por dia em historico/metricas.jsonl; dias sem coleta não aparecem."),
     "ranking": ("historico", "Atendimentos fechados por técnico, somados nos dias úteis registrados.",
                 "Soma de atend_por_tecnico do histórico; dias que repetem o mesmo dia de referência contam uma vez."),
+    "tickets_tecnico": ("milldesk", "Chamados que estão hoje com este técnico, em qualquer status menos Fechado.",
+                        "Campo abertos de por_agente: chamados cujo técnico contém o nome configurado em "
+                        "HELPDESK_AGENT_NAME, somando todos os status consultados (tudo menos HELPDESK_STATUS_EXCLUIDOS)."),
 }
 
 
