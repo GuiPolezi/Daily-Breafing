@@ -266,7 +266,7 @@ def gerar_html() -> str:
         grade_tecnicos = (f'<div class="grade painel-exec bloco-fixo">{"".join(cards_tecnicos)}</div>'
                           if cards_tecnicos else "")
         secao_suporte = f"""
-<section class="secao" id="suporte" data-scroll aria-labelledby="t-suporte">
+<section class="secao rolavel" id="suporte" data-scroll aria-labelledby="t-suporte">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Suporte", "suporte")}
     <div class="lado"><div class="kpi-medida"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p>
