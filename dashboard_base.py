@@ -1889,6 +1889,11 @@ def secao_vazia(id_: str, titulo: str, mensagem: str) -> str:
             f'<p class="vazio bloco-elastico">{mensagem}</p></section>')
 
 
+# Quantos sistemas os chips e as barras "por sistema" mostram. Tem que caber
+# todos os de HELPDESK_SISTEMAS (hoje 9): com 4/5/6/8 o corte escondia
+# Cartórios e os sistemas menores sem aviso. Sistema novo no mapa -> suba aqui.
+LIMITE_SISTEMAS = 9
+
 # "Outros Eventos" da agenda: quantas faixas de dia inteiro aparecem antes do
 # "Mais N", e quantos tons a paleta --faixa-N tem (tem que bater com o CSS).
 AGENDA_FAIXAS_VISIVEIS = 2
@@ -2232,7 +2237,7 @@ def cards_equipes_dev(por_equipe: dict, mostrar_nomes: bool = True) -> str:
             linha_devs = f'<p class="kpi-legenda">{len(devs)} desenvolvedor(es)</p>'
         chips = "".join(
             f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
-            for k, v in list((b.get("por_sistema") or {}).items())[:5])
+            for k, v in list((b.get("por_sistema") or {}).items())[:LIMITE_SISTEMAS])
         natureza = "".join(
             f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
             for k, v in list((b.get("por_natureza") or {}).items())[:3])

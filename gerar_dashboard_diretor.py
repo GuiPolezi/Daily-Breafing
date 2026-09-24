@@ -27,7 +27,7 @@ from pathlib import Path
 
 from dashboard_base import (
     AVISO_BASE_MUDOU, CSS, CSS_SINO, JS_CHARTS, JS_HEADER_SINO, JS_UI,
-    MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
+    LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino,
     cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
@@ -312,7 +312,7 @@ def gerar_html() -> str:
                     f'<span><b>{fmt_num(outros)}</b> em outros status</span></p>')
             chips = "".join(
                 f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
-                for k, v in list(dic(b.get("por_sistema")).items())[:4])
+                for k, v in list(dic(b.get("por_sistema")).items())[:LIMITE_SISTEMAS])
             cards_dev.append(f"""
 <article class="card kpi card-dev" style="--i:{i}" data-scroll>
   <div class="kpi-cabeca"><p class="dev-nome">{esc(rotulo)}</p>{tag_fonte("milldesk")}</div>
@@ -356,7 +356,7 @@ def gerar_html() -> str:
     </article>
     <article class="card" data-scroll>
       <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por sistema</h3>{tag_fonte("milldesk")}</div>
-      {barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=8)}
+      {barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)}
       {explica("fila_sistema")}
     </article>
     <article class="card" data-scroll>

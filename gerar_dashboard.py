@@ -23,7 +23,7 @@ from pathlib import Path
 from dashboard_base import (
     AVISO_BASE_MUDOU, CHEVRON_SVG, CSS, CSS_SINO, FONTES_INFO,
     JS_CHARTS, JS_HEADER_SINO, JS_UI,
-    MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
+    LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino, secao_agenda,
     cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, classificar_licenca,
@@ -320,7 +320,7 @@ def gerar_html() -> str:
             nome_exibido = esc(nome) if MOSTRAR_RANKING else f"Desenvolvedor {i + 1}"
             chips = "".join(
                 f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
-                for k, v in list(dic(b.get("por_sistema")).items())[:4])
+                for k, v in list(dic(b.get("por_sistema")).items())[:LIMITE_SISTEMAS])
             antigo = b.get("mais_antigo_dias")
             # total_no_nome é espelho de abertos; o fallback mantém a página de pé
             # com um helpdesk.json gravado antes desses campos existirem.
@@ -346,7 +346,7 @@ def gerar_html() -> str:
 </article>""")
 
         painel_status = barras_distribuicao(dic(dev.get("em_status_dev_por_status")), limite=6)
-        painel_sistema = barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=6)
+        painel_sistema = barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)
         tickets_dev = dev.get("tickets_em_status_dev") if isinstance(dev.get("tickets_em_status_dev"), list) else []
         dev_amostra_de = dev.get("tickets_em_status_dev_amostra_de") or dev.get("total_em_status_dev")
 
@@ -495,7 +495,7 @@ def gerar_html() -> str:
 
         # Distribuição atual da fila por sistema (foto de hoje, não série)
         if por_sistema:
-            rotulos = list(por_sistema.keys())[:8]
+            rotulos = list(por_sistema.keys())[:LIMITE_SISTEMAS]
             valores = [por_sistema[r] for r in rotulos]
             graficos_payload.append(grafico("chartSistemas", "Fila por sistema", valores,
                                             tipo="barra-h", cor="oliva", labels=rotulos))
