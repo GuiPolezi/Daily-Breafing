@@ -35,7 +35,7 @@ from dashboard_base import (
     grafico, grupo_fonte, json_inline, ler_historico, ler_json, logo_sino, markdown_para_html,
     menu_grade, nota_secao,
     num_html, ranking_semanal, redigir_nomes, render_ranking, secao_agenda, secao_vazia, serie_historico,
-    serie_tem_dado, seta_delta, status_fonte, tag_fonte, titulo_secao,
+    serie_tem_dado, seta_delta, status_fonte, tabela_sistemas, tag_fonte, titulo_secao,
 )
 from gerar_dashboard import CAMPO_HISTORICO_SISTEMA, SERIE_SISTEMA, SISTEMAS_DESTAQUE, dic
 
@@ -103,7 +103,6 @@ def gerar_html() -> str:
     fila = dic((helpdesk or {}).get("fila"))
     por_sistema = dic(fila.get("por_sistema"))
     idade = dic(fila.get("idade"))
-    por_natureza = dic(fila.get("por_natureza"))
     dev = dic((helpdesk or {}).get("desenvolvimento"))
     por_dev = dic(dev.get("por_dev"))
 
@@ -136,6 +135,8 @@ def gerar_html() -> str:
     n_vencendo = len((licencas or {}).get("vencendo_em_breve") or [])
     nomes_tecnicos = coletar_nomes_tecnicos(historico, helpdesk)
     rank = ranking_semanal(historico)
+    # Gráficos de todas as seções (Análise e Tendência); cada um diz a sua.
+    graficos_payload: list[dict] = []
 
     # ============================================================= 1. PANORAMA
     # Dois grupos, cada um aberto por uma faixa que declara a fonte (grupo_fonte):
@@ -177,12 +178,22 @@ def gerar_html() -> str:
         rodape=f'<b>{fmt_num(dev.get("total_em_status_dev"))}</b> em status de desenvolvimento' if dev else "",
         explicacao=explica("dev_atribuidos"), indice=2 + len(SISTEMAS_DESTAQUE)))
 
+    # Sem técnico no campo do chamado. Sai da contagem da fila inteira
+    # (fila.por_tecnico), não da amostra. Sem série no histórico: sem badge.
+    por_tecnico_fila = fila.get("por_tecnico")
+    v_sem = (por_tecnico_fila.get("(sem tecnico)", 0)
+             if isinstance(por_tecnico_fila, dict) else None)
+    cartoes.append(card_sino(
+        "Tickets sem atribuição", v_sem,
+        rodape="nenhum técnico responsável" if v_sem is not None else "",
+        explicacao=explica("sem_atribuicao"), indice=3 + len(SISTEMAS_DESTAQUE)))
+
     v_90 = idade.get("mais_de_90_dias")
     s_90, b_90 = par(v_90, "fila_mais_90", "menor")
     cartoes.append(card_sino(
         "Em aberto +90 dias", v_90, seta=s_90, delta=b_90,
         rodape="envelhecimento da fila" if idade else "",
-        explicacao=explica("idade_90"), indice=3 + len(SISTEMAS_DESTAQUE)))
+        explicacao=explica("idade_90"), indice=4 + len(SISTEMAS_DESTAQUE)))
 
     s_lic, b_lic = par(n_vencidas, "lic_vencidas_recentes", "menor", do_historico=True)
     card_licenca = card_sino(
@@ -199,7 +210,7 @@ def gerar_html() -> str:
   {aviso_base}
   {grupo_fonte("milldesk", "Volume operacional do dia. Cada card diz o que é e como o número é "
                            "contado; os chamados individuais ficam no briefing operacional, não aqui.",
-               rotulo="Milldesk")}
+               rotulo="Mildesk")}
   <div class="grade painel-exec bloco-elastico">{''.join(cartoes)}</div>
   {grupo_fonte("licencas", "Licenças de produção, sem homologação e sem teste.", rotulo="Licenças")}
   <div class="grade painel-exec bloco-elastico">{card_licenca}</div>
@@ -215,6 +226,11 @@ def gerar_html() -> str:
         data_brief = data_do_briefing(titulo_h1) or agora.strftime("%d/%m/%Y %H:%M")
         if not slides:
             slides = [{"titulo": "Leitura do dia", "md": texto}]
+        # O trecho antes do primeiro '## ' vira um slide "Briefing" (fonte e hora
+        # da coleta) que a diretoria não precisa ver -- decisão do Guilherme,
+        # 25/09/2026. Mesmo corte do semanal. Se for o único slide, fica.
+        if len(slides) > 1 and slides[0]["titulo"] == "Briefing":
+            slides = slides[1:]
         itens_slides, pontos = [], []
         for i, s in enumerate(slides):
             corpo_md = s["md"]
@@ -315,27 +331,52 @@ def gerar_html() -> str:
                 for k, v in list(dic(b.get("por_sistema")).items())[:LIMITE_SISTEMAS])
             cards_dev.append(f"""
 <article class="card kpi card-dev" style="--i:{i}" data-scroll>
-  <div class="kpi-cabeca"><p class="dev-nome">{esc(rotulo)}</p>{tag_fonte("milldesk")}</div>
+  <div class="kpi-cabeca"><p class="dev-nome">{esc(rotulo)}</p></div>
   <p class="kpi-numero menor">{num_html(total_nome)}</p>
-  <p class="kpi-legenda">no nome do dev · <b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
+  <p class="kpi-legenda">no nome do dev<br><b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
   {linha_trabalho}
   <p class="kpi-mini"><span><b>{fmt_num(b.get("acima_de_90_dias"))}</b> há mais de 90 dias</span>
      <span><b>{fmt_num(antigo) if antigo is not None else "—"}</b> dias o mais antigo</span></p>
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
 </article>""")
+        # Carga por desenvolvedor: barra vertical (Chart.js). Rótulo em lista de
+        # palavras quebra o nome em linhas em vez de girar ou cortar. Sem a
+        # biblioteca, volta às barras horizontais de HTML puro.
+        carga_num = {k: v for k, v in carga.items() if isinstance(v, (int, float))}
+        if chart_js is not None and carga_num:
+            graficos_payload.append(grafico(
+                "chartCargaDev", "Chamados no nome", list(carga_num.values()), tipo="barra",
+                cor="oliva", labels=[str(k).split() or [str(k)] for k in carga_num],
+                secao="desenv-analise"))
+            corpo_carga = ('<div class="grafico-caixa"><canvas id="chartCargaDev" role="img" '
+                           'aria-label="Carga por desenvolvedor: '
+                           + esc(", ".join(f"{k} {v}" for k, v in carga_num.items())) + '"></canvas></div>')
+        else:
+            corpo_carga = barras_distribuicao(carga, limite=10)
+        card_carga = f"""<article class="card card-grafico" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Carga por desenvolvedor</h3></div>
+      {corpo_carga}
+      {explica("dev_atribuidos")}
+    </article>"""
+        # Sistemas sem card no Panorama: sem esta tabela, a página não mostrava
+        # quantos chamados eles têm em aberto.
+        tabela = tabela_sistemas(fila, SISTEMAS_DESTAQUE)
+        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Demais sistemas · chamados em aberto</h3>'
+                          f'{tabela}{explica("fila_sistema")}') if tabela else ""
         secao_dev = f"""
 <section class="secao rolavel" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Desenvolvimento", "desenvolvimento")}
     <div class="lado">
-      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">atribuídos a desenvolvedores</p></div>
-      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">em status de desenvolvimento</p></div>
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">Tickets atribuídos a desenvolvedores</p></div>
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">Tickets em status de desenvolvimento</p></div>
     </div>
   </header>
   {nota_secao("milldesk", "Dois recortes da mesma fila: chamados com um desenvolvedor como responsável, "
                           "e chamados parados em status de desenvolvimento (com dono ou sem).")}
   {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
   {explica("dev_equipe")}
+  {bloco_sistemas}
   <h3 class="kpi-rotulo bloco-fixo">Por desenvolvedor</h3>
   <div class="grade grade-dev bloco-elastico">{''.join(cards_dev) or '<p class="vazio bloco-elastico">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
   {explica("dev_em_trabalho")}
@@ -349,25 +390,11 @@ def gerar_html() -> str:
     </div>
   </header>
   <div class="grade duas-colunas-secao bloco-elastico">
+    {card_carga}
     <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Carga por desenvolvedor</h3>{tag_fonte("milldesk")}</div>
-      {barras_distribuicao(carga, limite=10)}
-      {explica("dev_atribuidos")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por sistema</h3>{tag_fonte("milldesk")}</div>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por sistema</h3></div>
       {barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)}
       {explica("fila_sistema")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por status</h3>{tag_fonte("milldesk")}</div>
-      {barras_distribuicao(dic(dev.get("em_status_dev_por_status")), limite=8)}
-      {explica("dev_status")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Corretivo x evolutivo · fila inteira</h3>{tag_fonte("milldesk")}</div>
-      {barras_distribuicao(por_natureza, limite=6, criticos=("Corretivo",))}
-      {explica("natureza")}
     </article>
   </div>
 </section>"""
@@ -375,28 +402,24 @@ def gerar_html() -> str:
     # ============================================================= 5. TENDÊNCIA
     serie = serie_historico(historico, DIAS_GRAFICO)
     n_dias = len(serie["labels"])
-    graficos_payload: list[dict] = []
     if not n_dias:
         secao_evolucao = secao_vazia("evolucao", "Tendência", "Histórico indisponível (historico/metricas.jsonl vazio ou ausente).")
     else:
         candidatos = [
             ("fila", "chartFila", "Fila de chamados abertos", "azul", "menor"),
             ("atend", "chartAtend", "Atendimentos fechados por dia", "rubro", "maior"),
-            ("dev", "chartDev", "Atribuídos a desenvolvedores", "verde", "menor"),
             ("corretivo", "chartCorretivo", "Fila corretiva (bugs e falhas)", "rubro", "menor"),
             ("evolutivo", "chartEvolutivo", "Fila evolutiva (melhorias)", "verde", "maior"),
-            ("idade_90", "chartIdade90", "Abertos há mais de 90 dias", "rubro", "menor"),
-            ("lic_vencidas", "chartLic", "Licenças vencidas recentes", "mel", "menor"),
         ]
         for rotulo_sis in SISTEMAS_DESTAQUE:
             chave = SERIE_SISTEMA.get(rotulo_sis)
             if chave:
                 candidatos.insert(2, (chave, f"chart{chave.title()}", f"Fila · {rotulo_sis}", "oliva", "menor"))
-        cartoes_g = []
+        cartoes_g, graficos_tend = [], []
         for chave, id_canvas, titulo, cor, melhor in candidatos:
             if not serie_tem_dado(serie, chave):
                 continue
-            graficos_payload.append(grafico(id_canvas, titulo, serie[chave], cor=cor))
+            graficos_tend.append(grafico(id_canvas, titulo, serie[chave], cor=cor))
             valores = [v for v in serie[chave] if v is not None]
             ult, ant = (valores[-1] if valores else None), (valores[-2] if len(valores) > 1 else None)
             topo = (f'<div class="kpi-linha"><p class="kpi-numero menor">{num_html(ult)}</p>'
@@ -404,11 +427,12 @@ def gerar_html() -> str:
             cartoes_g.append(card_grafico(id_canvas, titulo, f"Tendência: {titulo}", topo))
         if chart_js is None:
             corpo = '<p class="vazio bloco-elastico">Gráficos indisponíveis nesta geração (biblioteca não encontrada).</p>'
-            graficos_payload = []
+            graficos_tend = []
         elif not cartoes_g:
             corpo = '<p class="vazio bloco-elastico">Ainda não há série suficiente para desenhar gráficos.</p>'
         else:
             corpo = f'<div class="grade larga graficos quatro bloco-elastico">{"".join(cartoes_g)}</div>'
+        graficos_payload.extend(graficos_tend)
         secao_evolucao = f"""
 <section class="secao rolavel" id="evolucao" data-scroll aria-labelledby="t-evolucao">
   <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Tendência", "evolucao")}<p class="lado subtitulo">últimos {DIAS_GRAFICO} dias · {n_dias} registrado(s)</p></header>

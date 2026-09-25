@@ -1752,6 +1752,9 @@ JS_CHARTS = """
     var o = base(horizontal);
     o.indexAxis = horizontal ? "y" : "x";
     o.interaction = { mode: "nearest", intersect: true };
+    // Barra vertical com rotulos proprios (ex.: um por desenvolvedor): o autoSkip
+    // do eixo x esconderia nomes. Rotulo em lista quebra em linhas, sem girar.
+    if (!horizontal && g.labels) o.scales.x.ticks.autoSkip = false;
     new Chart(el, { type: "bar",
       data: { labels: g.labels || D.labels, datasets: [{ label: g.rotulo, data: g.dados,
         backgroundColor: rgba(c[0], .82), hoverBackgroundColor: c[0],
@@ -1759,27 +1762,26 @@ JS_CHARTS = """
       options: o });
   }
 
-  var feito = false;
-  function montar(){
-    if (feito) return;
-    var algum = false;
-    for (var i = 0; i < D.graficos.length; i++) {
-      if (doc.getElementById(D.graficos[i].id)) { algum = true; break; }
-    }
-    if (!algum) return;
-    feito = true;
+  // Cada grafico e montado quando a SUA secao fica ativa: g.secao, ou D.secao
+  // para quem nao declara (o caso de todos os graficos da Tendencia/Evolucao).
+  var SECAO = D.secao || "evolucao";
+  var secaoDe = function(g){ return g.secao || SECAO; };
+  var montados = {};
+  function montar(secao){
     D.graficos.forEach(function(g){
+      if (montados[g.id] || (secao && secaoDe(g) !== secao)) return;
       var el = doc.getElementById(g.id);
       if (!el) return;
+      montados[g.id] = true;
       try { (g.tipo === "barra" || g.tipo === "barra-h") ? barra(el, g) : area(el, g); }
       catch (e) { /* um grafico com problema nao derruba os outros */ }
     });
   }
-  var SECAO = D.secao || "evolucao";
-  doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id === SECAO) montar(); });
-  // carga direta com #evolucao: o evento inicial pode ter sido emitido antes deste ouvinte existir
+  doc.addEventListener("secao:ativa", function(e){ if (e.detail && e.detail.id) montar(e.detail.id); });
+  // carga direta com #secao: o evento inicial pode ter sido emitido antes deste ouvinte existir
   var jaAtiva = doc.querySelector(".secao.ativa");
-  if ((jaAtiva && jaAtiva.id === SECAO) || (location.hash || "").slice(1) === SECAO) montar();
+  if (jaAtiva && jaAtiva.id) montar(jaAtiva.id);
+  if (location.hash) montar(location.hash.slice(1));
   if (win.matchMedia) {  // janela redimensionada para o modo empilhado antes de visitar a secao
     var mq = win.matchMedia("(min-width: 900px)");
     var aoMudar = function(){ if (!mq.matches) montar(); };
@@ -1843,7 +1845,7 @@ def base_status_comparavel(helpdesk: dict | None, anterior: dict) -> bool:
 
 AVISO_BASE_MUDOU = (
     "A comparação com o dia anterior está suspensa nesta seção: o conjunto de status "
-    "consultados no Milldesk mudou, então o total de hoje e o de ontem não saem da "
+    "consultados no Mildesk mudou, então o total de hoje e o de ontem não saem da "
     "mesma régua. Os badges voltam na próxima coleta."
 )
 
@@ -2051,7 +2053,7 @@ def render_ranking(nomes: list, valores: list) -> str:
 # ----------------------------------------------------------------------------
 # chave -> (rótulo curto, classe CSS, descrição da fonte)
 FONTES_INFO: dict[str, tuple[str, str, str]] = {
-    "milldesk": ("Milldesk", "milldesk",
+    "milldesk": ("Mildesk", "milldesk",
                  "Help desk da empresa (API v1). Chamados abertos, status, categoria, "
                  "subcategoria, técnico responsável, prioridade e há quanto tempo estão abertos."),
     "licencas": ("Sistema de licenças", "licencas",
@@ -2080,7 +2082,7 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                       "Funde os compromissos do calendário principal e procura o maior "
                       "buraco dentro de AGENDA_EXPEDIENTE. Buraco menor que "
                       "AGENDA_JANELA_MINIMA não conta como janela."),
-    "fila_total": ("milldesk", "Todos os chamados em aberto no Milldesk, de todos os técnicos.",
+    "fila_total": ("milldesk", "Todos os chamados em aberto no Mildesk, de todos os técnicos.",
                    "Em aberto aqui quer dizer: qualquer status que não seja Fechado. O coletor pede a "
                    "lista de status à própria API e consulta todos, menos os de HELPDESK_STATUS_EXCLUIDOS."),
     "fila_sistema": ("milldesk", "Chamados em aberto do sistema, dentro da mesma fila total.",
@@ -2094,6 +2096,9 @@ METRICAS: dict[str, tuple[str, str, str]] = {
     "dev_atribuidos": ("milldesk", "Chamados em aberto atribuídos aos desenvolvedores.",
                        "Filtra a fila pelo campo Técnico do chamado contra os nomes de "
                        "HELPDESK_DEV_NAMES, em qualquer status que não seja Fechado."),
+    "sem_atribuicao": ("milldesk", "Chamados em aberto que não têm nenhum técnico responsável no Mildesk.",
+                       "Chamados da fila (qualquer status menos Fechado) com o campo Técnico vazio; "
+                       "é a linha '(sem tecnico)' de fila.por_tecnico."),
     "dev_total_nome": ("milldesk", "Tudo que está no nome do desenvolvedor, em qualquer status menos Fechado.",
                        "Campo Técnico do chamado igual ao nome do dev; é o número grande do card."),
     "dev_em_trabalho": ("milldesk", "Do total do desenvolvedor, quanto está em trabalho ativo agora.",
@@ -2118,7 +2123,7 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                  "Lido da subcategoria do chamado: 'Bug / Erro' e 'Lentidão ou Travamento' viram "
                  "corretivo; 'Melhoria / Nova Função' vira evolutivo; implantação, migração, "
                  "treinamento e configuração entram em faixas próprias."),
-    "grupo": ("milldesk", "Agrupamento de produto definido no próprio Milldesk.",
+    "grupo": ("milldesk", "Agrupamento de produto definido no próprio Mildesk.",
               "Campo group do chamado, como veio da origem. Cerca de um quinto da fila não tem "
               "esse campo preenchido — por isso o sistema é classificado pela categoria, não por aqui."),
     "lic_vencidas": ("licencas", "Licenças de produção vencidas há pouco tempo — ainda acionáveis.",
@@ -2131,14 +2136,15 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                  "Uma linha por dia em historico/metricas.jsonl; dias sem coleta não aparecem."),
     "ranking": ("historico", "Atendimentos fechados por técnico, somados nos dias úteis registrados.",
                 "Soma de atend_por_tecnico do histórico; dias que repetem o mesmo dia de referência contam uma vez."),
-    "tickets_tecnico": ("milldesk", "Chamados que estão hoje com este técnico, em qualquer status menos Fechado.",
+    "tickets_tecnico": ("milldesk", "Quantidade de chamados atribuídos ao técnico, contada na coleta desta "
+                                    "manhã, em qualquer status menos Fechado.",
                         "Campo abertos de por_agente: chamados cujo técnico contém o nome configurado em "
                         "HELPDESK_AGENT_NAME, somando todos os status consultados (tudo menos HELPDESK_STATUS_EXCLUIDOS)."),
 }
 
 
 def tag_fonte(chave: str) -> str:
-    """Etiqueta com o nome da fonte de origem (Milldesk, licenças, agenda...)."""
+    """Etiqueta com o nome da fonte de origem (Mildesk, licenças, agenda...)."""
     rotulo, classe, descricao = FONTES_INFO.get(chave, (chave, "", ""))
     classe = f" {classe}" if classe else ""
     return f'<span class="tag-fonte{classe}" title="{esc(descricao)}">{esc(rotulo)}</span>'
@@ -2251,6 +2257,37 @@ def cards_equipes_dev(por_equipe: dict, mostrar_nomes: bool = True) -> str:
   <div class="dev-sistemas">{natureza}</div>
 </article>""")
     return f'<div class="grade grade-dev bloco-elastico">{"".join(cards)}</div>'
+
+
+def tabela_sistemas(fila: dict, excluir: list[str]) -> str:
+    """Tabela dos sistemas SEM card próprio no Panorama: abertos, +90 dias, mais antigo.
+
+    Os números saem de fila.por_sistema_resumo, calculado sobre a fila inteira --
+    nunca das amostras de chamado. Sem o resumo, cai em fila.por_sistema (só o
+    total, as outras colunas viram "—"). Nada a mostrar devolve string vazia.
+    """
+    fila = fila if isinstance(fila, dict) else {}
+    resumo = fila.get("por_sistema_resumo") if isinstance(fila.get("por_sistema_resumo"), dict) else {}
+    if not resumo:
+        por_sistema = fila.get("por_sistema") if isinstance(fila.get("por_sistema"), dict) else {}
+        resumo = {k: {"abertos": v} for k, v in por_sistema.items()}
+    linhas = []
+    for sistema, bloco in resumo.items():
+        if sistema in excluir:
+            continue
+        b = bloco if isinstance(bloco, dict) else {}
+        antigo = b.get("mais_antigo_dias")
+        linhas.append(
+            f'<tr><td>{esc(sistema)}</td><td class="c">{fmt_num(b.get("abertos"))}</td>'
+            f'<td class="c">{fmt_num(b.get("acima_de_90_dias"))}</td>'
+            f'<td class="d">{fmt_num(antigo) if antigo is not None else "—"}</td></tr>')
+    if not linhas:
+        return ""
+    return (f'<div class="bloco-fixo"><table class="tabela-serie tabela-sistemas">'
+            f'<caption class="sr-only">Chamados em aberto dos demais sistemas</caption>'
+            f'<thead><tr><th scope="col">Sistema</th><th scope="col" class="c">Em aberto</th>'
+            f'<th scope="col" class="c">Há mais de 90 dias</th><th scope="col" class="d">Mais antigo (dias)</th></tr></thead>'
+            f'<tbody>{"".join(linhas)}</tbody></table></div>')
 
 
 def card_grafico(id_canvas: str, titulo: str, descricao: str, corpo_topo: str = "") -> str:
@@ -2380,11 +2417,17 @@ def faixas_de_prazo(itens: list) -> dict[str, int]:
 
 
 def grafico(id_canvas: str, rotulo: str, dados: list, tipo: str = "area",
-            cor: str = "azul", labels: list | None = None) -> dict:
-    """Descritor de um gráfico para o payload do JS (JS_CHARTS monta a partir disso)."""
+            cor: str = "azul", labels: list | None = None, secao: str | None = None) -> dict:
+    """Descritor de um gráfico para o payload do JS (JS_CHARTS monta a partir disso).
+
+    `secao` é o id da seção onde o canvas está; sem ela, vale a do payload
+    (hoje sempre "evolucao"). O gráfico só é desenhado quando a seção fica ativa.
+    """
     d = {"id": id_canvas, "rotulo": rotulo, "dados": dados, "tipo": tipo, "cor": cor}
     if labels is not None:
         d["labels"] = labels
+    if secao:
+        d["secao"] = secao
     return d
 
 

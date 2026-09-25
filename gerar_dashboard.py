@@ -31,7 +31,7 @@ from dashboard_base import (
     fmt_num, grafico, grupo_fonte, json_inline, label_dia, ler_historico, ler_json, logo_sino,
     markdown_para_html, menu_grade, nota_secao, num_html, ranking_semanal, redigir_nomes,
     render_ranking, secao_vazia, serie_historico, serie_tem_dado, seta_delta, status_fonte,
-    tabela_licencas, tabela_tickets, tag_fonte, titulo_secao,
+    tabela_licencas, tabela_sistemas, tabela_tickets, tag_fonte, titulo_secao,
 )
 
 RELATORIO = RAIZ / "relatorio.md"
@@ -114,7 +114,6 @@ def gerar_html() -> str:
     por_sistema = dic(fila.get("por_sistema"))
     idade = dic(fila.get("idade"))
     por_status = dic(fila.get("por_status"))
-    por_natureza = dic(fila.get("por_natureza"))
     resumo_sistema = dic(fila.get("por_sistema_resumo"))
     amostra_de = dic((helpdesk or {}).get("tickets_por_sistema_amostra_de"))
     dev = dic((helpdesk or {}).get("desenvolvimento"))
@@ -240,8 +239,8 @@ def gerar_html() -> str:
     <p class="subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>
   </header>
   {aviso_recorte}{aviso_base}
-  {grupo_fonte("milldesk", "Fila de chamados em aberto e atendimentos do Milldesk. Cada card diz o que é "
-                           "e como o número é contado.", rotulo="Milldesk")}
+  {grupo_fonte("milldesk", "Fila de chamados em aberto e atendimentos do Mildesk. Cada card diz o que é "
+                           "e como o número é contado.", rotulo="Mildesk")}
   <div class="grade painel-exec bloco-elastico">{''.join(cartoes)}</div>
 </section>"""
 
@@ -336,27 +335,31 @@ def gerar_html() -> str:
                     f'<span><b>{fmt_num(outros)}</b> em outros status</span></p>')
             cards_dev.append(f"""
 <article class="card kpi card-dev" style="--i:{i}" data-scroll>
-  <div class="kpi-cabeca"><p class="dev-nome">{nome_exibido}</p>{tag_fonte("milldesk")}</div>
+  <div class="kpi-cabeca"><p class="dev-nome">{nome_exibido}</p></div>
   <p class="kpi-numero menor">{num_html(total_nome)}</p>
-  <p class="kpi-legenda">no nome do dev · <b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
+  <p class="kpi-legenda">no nome do dev<br><b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
   {linha_trabalho}
   <p class="kpi-mini"><span><b>{fmt_num(b.get("acima_de_90_dias"))}</b> há mais de 90 dias</span>
      <span><b>{fmt_num(antigo) if antigo is not None else "—"}</b> dias o mais antigo</span></p>
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
 </article>""")
 
-        painel_status = barras_distribuicao(dic(dev.get("em_status_dev_por_status")), limite=6)
         painel_sistema = barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)
         tickets_dev = dev.get("tickets_em_status_dev") if isinstance(dev.get("tickets_em_status_dev"), list) else []
         dev_amostra_de = dev.get("tickets_em_status_dev_amostra_de") or dev.get("total_em_status_dev")
+        # Sistemas sem card nos Destaques: sem esta tabela, a página não mostrava
+        # quantos chamados eles têm em aberto.
+        tabela = tabela_sistemas(fila, SISTEMAS_DESTAQUE)
+        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Demais sistemas · chamados em aberto</h3>'
+                          f'{tabela}{explica("fila_sistema")}') if tabela else ""
 
         secao_dev = f"""
 <section class="secao rolavel" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Desenvolvimento", "desenvolvimento")}
     <div class="lado">
-      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">atribuídos a desenvolvedores</p></div>
-      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">em status de desenvolvimento</p></div>
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_atribuidos_a_devs"))}</p><p class="kpi-legenda">Tickets atribuídos a desenvolvedores</p></div>
+      <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">Tickets em status de desenvolvimento</p></div>
     </div>
   </header>
   {nota_secao("milldesk", "Dois recortes diferentes da mesma fila: chamados que têm um desenvolvedor como responsável, "
@@ -364,6 +367,7 @@ def gerar_html() -> str:
   <h3 class="kpi-rotulo bloco-fixo">Por equipe</h3>
   {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
   {explica("dev_equipe")}
+  {bloco_sistemas}
   <h3 class="kpi-rotulo bloco-fixo">Por desenvolvedor</h3>
   <div class="grade grade-dev bloco-elastico">{''.join(cards_dev) or '<p class="vazio bloco-elastico">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
   {explica("dev_em_trabalho")}
@@ -378,23 +382,13 @@ def gerar_html() -> str:
   </header>
   <div class="grade larga graficos quatro bloco-elastico">
     <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em status de desenvolvimento · por status</h3>{tag_fonte("milldesk")}</div>
-      {painel_status}
-      {explica("dev_status")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em status de desenvolvimento · por sistema</h3>{tag_fonte("milldesk")}</div>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em status de desenvolvimento · por sistema</h3></div>
       {painel_sistema}
       {explica("fila_sistema")}
     </article>
     <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · corretivo x evolutivo</h3>{tag_fonte("milldesk")}</div>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · corretivo x evolutivo</h3></div>
       {barras_distribuicao(dic(dev.get("em_status_dev_por_natureza")), limite=6, criticos=("Corretivo",))}
-      {explica("natureza")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Fila inteira · natureza do trabalho</h3>{tag_fonte("milldesk")}</div>
-      {barras_distribuicao(por_natureza, limite=6, criticos=("Corretivo",))}
       {explica("natureza")}
     </article>
   </div>
@@ -475,9 +469,6 @@ def gerar_html() -> str:
             ("equipe", "chartEquipe", "Abertos da equipe monitorada", "oliva", "menor", f"último registro · {data_ult}"),
             ("corretivo", "chartCorretivo", "Fila corretiva (bugs e falhas)", "rubro", "menor", f"último registro · {data_ult}"),
             ("evolutivo", "chartEvolutivo", "Fila evolutiva (melhorias)", "verde", "maior", f"último registro · {data_ult}"),
-            ("idade_90", "chartIdade90", "Abertos há mais de 90 dias", "rubro", "menor", f"último registro · {data_ult}"),
-            ("dev", "chartDev", "Atribuídos a desenvolvedores", "verde", "menor", f"último registro · {data_ult}"),
-            ("lic_vencidas", "chartLic", "Licenças vencidas recentes", "mel", "menor", f"último registro · {data_ult}"),
         ]
         for rotulo_sis in SISTEMAS_DESTAQUE:
             chave = SERIE_SISTEMA.get(rotulo_sis)
