@@ -11,7 +11,7 @@ Um botão "Perguntar à IA" no painel que responda perguntas livres sobre
 *"Quantas solicitações foram criadas de Holambra?"*
 
 - **Onde:** `dashboard.html` (operação) e `dashboard_diretor.html`.
-  **Nunca** no financeiro, que não pode mostrar nomes de pessoas.
+  **Nunca** no briefing de licenças, que não pode mostrar nomes de pessoas.
 - **Quem usa:** o diretor, **no PC dele, na mesma rede** da empresa.
 - **Dados:** coletar **todos** os chamados, inclusive os fechados, com **todos os
   campos**, num arquivo separado `dados/chamados.json`.
@@ -189,7 +189,7 @@ revisores (correção + segurança)** → só então a próxima.
   espaço), e caíram nos 11 "chamados normais" do dia. Com `showTicketsPerPeriod`
   de 22/09 (que agora sabemos que traz tudo) dá para confirmar, mas é preciso
   autorização para consultar a produção.
-- `testes/test_layout.py`: falha antiga `dashboard_financeiro.html #movimentacao`
+- `testes/test_layout.py`: falha antiga `dashboard_licencas.html #movimentacao`
   (`p.aviso-escopo` sem `bloco-fixo`/`bloco-elastico`). Não corrigida.
 - Opcional: comentário em `coletar_nomes_tecnicos()` (`dashboard_base.py`)
   dizendo que a segurança com `agentes_monitorados`/`devs_monitorados` corrompidos

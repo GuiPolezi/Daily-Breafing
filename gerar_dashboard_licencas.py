@@ -1,7 +1,7 @@
-"""Gera dashboard_financeiro.html: painel de licencas para o financeiro.
+"""Gera dashboard_licencas.html: o briefing de licencas.
 
 Le dados/licencas.json, historico/licencas.jsonl, historico/metricas.jsonl e
-relatorio_financeiro.md. Uma unica fonte de negocio: o painel interno de
+relatorio_licencas.md. Uma unica fonte de negocio: o painel interno de
 licencas. Nenhum dado de help desk, nenhum nome de tecnico -- por decisao de
 privacidade esta pagina nunca exibe pessoas da equipe.
 
@@ -12,7 +12,7 @@ O que ela responde, que o diario nao responde:
 
 Limite conhecido: a fonte expoe apenas cliente, sistema e vencimento. Nao ha
 valor, contrato nem responsavel -- entao este painel e um radar de renovacao,
-nao um painel financeiro de receita.
+nao um painel de receita.
 
 Identidade visual vem de dashboard_base.py. Nunca lanca excecao por dado
 ausente: a secao degrada e o resto da pagina sai.
@@ -38,8 +38,8 @@ from dashboard_base import (
     serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
 )
 
-RELATORIO = RAIZ / "relatorio_financeiro.md"
-SAIDA = RAIZ / "dashboard_financeiro.html"
+RELATORIO = RAIZ / "relatorio_licencas.md"
+SAIDA = RAIZ / "dashboard_licencas.html"
 DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
 
 # Seis seções, as mesmas seis células do favo. O id "briefing" é mantido porque
@@ -176,9 +176,9 @@ def gerar_html() -> str:
 
     # ============================================================= 2. RELATÓRIO
     if relatorio is None:
-        secao_briefing = secao_vazia("briefing", "Relatório", "Relatório indisponível (relatorio_financeiro.md ausente ou vazio).")
+        secao_briefing = secao_vazia("briefing", "Relatório", "Relatório indisponível (relatorio_licencas.md ausente ou vazio).")
     else:
-        # Mesmo que o relatorio cite um tecnico, ele nao chega ao financeiro.
+        # Mesmo que o relatorio cite um tecnico, ele nao chega ao briefing de licencas.
         titulo_h1, slides = dividir_briefing(redigir_nomes(relatorio, nomes_a_esconder))
         data_brief = data_do_briefing(titulo_h1) or agora.strftime("%d/%m/%Y %H:%M")
         if not slides:
@@ -388,7 +388,7 @@ def gerar_html() -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Licenças — Financeiro — {esc(data_dados)}</title>
+<title>Briefing Licenças — {esc(data_dados)}</title>
 <style>{fontes_css}{CSS}</style>
 {marcador_anim}
 </head>
@@ -398,7 +398,7 @@ def gerar_html() -> str:
 <header class="topo">
   <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Licenças — início">
     {ABELHA_SVG}
-    <h1 class="wordmark"><span class="w" style="--traco-w:64%">Licenças{TRACO_SVG}</span><span class="w">Financeiro{TRACO_SVG}</span></h1>
+    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing{TRACO_SVG}</span><span class="w">Licenças{TRACO_SVG}</span></h1>
   </a>
   <nav class="favo" aria-label="Seções do painel">
     {favo_cheio}
@@ -429,8 +429,8 @@ def main() -> int:
         pass
     try:
         conteudo = gerar_html()
-    except Exception as e:  # último recurso: nunca deixar o financeiro sem página
-        print(f"ERRO ao montar dashboard financeiro: {type(e).__name__}: {e}")
+    except Exception as e:  # último recurso: nunca deixar o briefing de licenças sem página
+        print(f"ERRO ao montar dashboard de licenças: {type(e).__name__}: {e}")
         conteudo = (
             "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='utf-8'><title>Licenças</title></head>"
             f"<body><h1>Licenças</h1><p>Falha ao gerar o painel: {esc(type(e).__name__)}</p></body></html>")

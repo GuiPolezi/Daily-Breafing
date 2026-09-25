@@ -1,4 +1,4 @@
-"""Base compartilhada dos dashboards (diario, semanal, diretor, financeiro).
+"""Base compartilhada dos dashboards (diario, semanal, diretor, licencas).
 
 Guarda o que nao pertence a um briefing especifico: identidade visual "favo de
 mel" (CSS, JS, SVGs, fontes), leitura tolerante a falhas de dados/ e do
@@ -1155,7 +1155,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 /* ==== GRADE UNICA DE CARDS =================================================
    Uma definicao para as quatro paginas. A densidade muda por --card-min, nunca
    por uma grade nova: grade propria dentro de gerador foi metade da causa da
-   quebra (o diretor e o financeiro tinham as suas). O min(100%,...) impede a
+   quebra (o diretor e o de licencas tinham as suas). O min(100%,...) impede a
    coluna de estourar a linha em tela estreita.                               */
 .grade{display:grid;gap:var(--gap);align-content:start;
   grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--card-min,240px)),1fr))}
@@ -1187,7 +1187,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .leitura-exec{font-size:clamp(15px,1.7vh,18px);line-height:1.62}
 .leitura-exec li{margin-bottom:7px}
 
-/* ---- vindo de CSS_FINANCEIRO ---- */
+/* ---- vindo do CSS proprio da pagina de licencas ---- */
 .faixa-prazo .card{padding:clamp(14px,1.5vw,22px)}
 .faixa-prazo .kpi-numero{font-size:var(--t-num-2)}
 .faixa-prazo .critica{background:var(--verm-bg)}
@@ -2394,7 +2394,7 @@ def agrupar_licencas_por(itens: list, campo: str) -> dict[str, int]:
 
 
 def faixas_de_prazo(itens: list) -> dict[str, int]:
-    """Licenças agrupadas pela urgência do prazo -- a leitura que o financeiro faz."""
+    """Licenças agrupadas pela urgência do prazo -- a leitura do briefing de licenças."""
     faixas = {"Vencidas": 0, "Vence em até 7 dias": 0, "Vence em 8 a 30 dias": 0,
               "Vence em 31 a 60 dias": 0, "Mais de 60 dias": 0}
     for i in itens or []:
@@ -2437,7 +2437,7 @@ def grafico(id_canvas: str, rotulo: str, dados: list, tipo: str = "area",
 # Camada aplicada DEPOIS de CSS, no mesmo <style>: as variaveis de paleta sao
 # redefinidas e os componentes novos (marca SINO, menu em blocos, faixa de
 # grupo, card centralizado) sao acrescentados. Nada aqui renomeia, altera ou
-# apaga o que ja existe -- por isso o diario, o financeiro e o semanal seguem
+# apaga o que ja existe -- por isso o de licencas e o semanal seguem
 # no tema mel/favo sem tocar em uma linha.
 #
 # Paleta (definida pelo Guilherme, 21/09/2026):
@@ -2547,7 +2547,7 @@ def card_sino(titulo: str, valor, sub: str = "", rodape: str = "", delta: str = 
 CSS_SINO = """
 /* ==== TEMA SINO ============================================================
    Aplicado depois de CSS no dashboard_diretor e no dashboard (diario) -- o
-   financeiro e o semanal seguem no tema mel. Primeiro a paleta (os
+   de licencas e o semanal seguem no tema mel. Primeiro a paleta (os
    mesmos nomes de variavel da base, com valores novos), depois os componentes
    que so existem aqui.                                                       */
 :root{

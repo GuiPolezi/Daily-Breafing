@@ -11,8 +11,8 @@ dashboard.html
 CLAUDE.md
 dashboard_semanal.html
 relatorio_diretor.md
-relatorio_financeiro.md
+relatorio_licencas.md
 dashboard_diretor.html
-dashboard_financeiro.html
+dashboard_licencas.html
 # scripts temporarios que o claude -p headless cria para inspecionar JSON
 _tmp_*.py

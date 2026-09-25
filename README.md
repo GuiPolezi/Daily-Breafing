@@ -171,7 +171,7 @@ DASHBOARD_DIAS_GRAFICO=30        # dias do histórico exibidos nos gráficos
 
 Para gerar o dashboard manualmente: `python gerar_dashboard.py`.
 
-## Briefing da diretoria e do financeiro (Windows)
+## Briefing da diretoria e de licenças (Windows)
 
 Os dois rodam **todo dia**, logo depois do briefing diário, e **não executam
 coletores**: reaproveitam os JSONs que `briefing.bat` já coletou naquela manhã.
@@ -182,7 +182,7 @@ abrir três abas). Rodando um deles sozinho, o navegador abre normalmente:
 
 ```bash
 briefing_diretor.bat        # relatorio_diretor.md + dashboard_diretor.html
-briefing_financeiro.bat     # relatorio_financeiro.md + dashboard_financeiro.html
+briefing_licencas.bat       # relatorio_licencas.md + dashboard_licencas.html
 ```
 
 ### Diretoria — `dashboard_diretor.html`
@@ -194,7 +194,7 @@ sistema, carga de desenvolvimento, chamados há mais de 90 dias, licenças), Lei
 Desenvolvimento (carga por dev, por sistema, por status) e Tendência (gráficos
 do histórico). Nomes de técnico aparecem, respeitando `DASHBOARD_MOSTRAR_RANKING`.
 
-### Financeiro — `dashboard_financeiro.html`
+### Licenças — `dashboard_licencas.html`
 
 Fonte única: o sistema interno de licenças. **Nenhum dado de help desk e nenhum
 nome de pessoa** — a página lê `helpdesk.json` apenas para saber quais nomes

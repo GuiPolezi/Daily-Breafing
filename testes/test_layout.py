@@ -47,7 +47,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 PAGINAS = [
     "dashboard.html",
     "dashboard_diretor.html",
-    "dashboard_financeiro.html",
+    "dashboard_licencas.html",
     "dashboard_semanal.html",
 ]
 
@@ -55,7 +55,7 @@ PAGINAS = [
 GERADORES = [
     "gerar_dashboard.py",
     "gerar_dashboard_diretor.py",
-    "gerar_dashboard_financeiro.py",
+    "gerar_dashboard_licencas.py",
     "gerar_dashboard_semanal.py",
 ]
 

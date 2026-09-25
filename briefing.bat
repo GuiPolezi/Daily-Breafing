@@ -1,6 +1,6 @@
 @echo off
 REM Briefing diario - roda coletores, arquiva metricas e sintetiza com Claude Code
-REM Ao final dispara tambem os briefings da diretoria e do financeiro (ambos diarios),
+REM Ao final dispara tambem os briefings da diretoria e de licencas (ambos diarios),
 REM que NAO rodam coletores: reaproveitam os JSONs ja coletados aqui.
 cd /d "%~dp0"
 call .venv\Scripts\activate.bat
@@ -26,14 +26,14 @@ python notificar.py || echo AVISO: notificacao falhou
 echo --- briefing da diretoria
 call briefing_diretor.bat sem-abrir || echo AVISO: briefing da diretoria falhou
 
-echo --- briefing do financeiro
-call briefing_financeiro.bat sem-abrir || echo AVISO: briefing do financeiro falhou
+echo --- briefing de licencas
+call briefing_licencas.bat sem-abrir || echo AVISO: briefing de licencas falhou
 
 REM Abre as tres no fim, para nao interromper o pipeline no meio.
 REM As chamadas acima usam "sem-abrir" so para nao abrir a mesma pagina duas vezes.
 echo --- abrindo as tres paginas
 if exist dashboard.html start "" dashboard.html
 if exist dashboard_diretor.html start "" dashboard_diretor.html
-if exist dashboard_financeiro.html start "" dashboard_financeiro.html
+if exist dashboard_licencas.html start "" dashboard_licencas.html
 
-echo === Fim: dashboard.html, dashboard_diretor.html, dashboard_financeiro.html ===
+echo === Fim: dashboard.html, dashboard_diretor.html, dashboard_licencas.html ===
