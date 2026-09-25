@@ -29,7 +29,6 @@ from dashboard_base import (
     AVISO_BASE_MUDOU, CSS, CSS_SINO, JS_CHARTS, JS_HEADER_SINO, JS_UI,
     LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino,
-    cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
     data_do_briefing, dividir_briefing, esc, explica, fmt_num,
     grafico, grupo_fonte, json_inline, ler_historico, ler_json, logo_sino, markdown_para_html,
@@ -369,10 +368,10 @@ def gerar_html() -> str:
       {corpo_carga}
       {explica("dev_atribuidos")}
     </article>"""
-        # Sistemas sem card no Panorama: sem esta tabela, a página não mostrava
-        # quantos chamados eles têm em aberto.
-        tabela = tabela_sistemas(fila, SISTEMAS_DESTAQUE)
-        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Demais sistemas · chamados em aberto</h3>'
+        # Todos os sistemas da fila (decisão do Guilherme, 25/09/2026): a tabela
+        # substituiu os cards por equipe nesta página.
+        tabela = tabela_sistemas(fila, [])
+        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Todos os sistemas · chamados em aberto</h3>'
                           f'{tabela}{explica("fila_sistema")}') if tabela else ""
         secao_dev = f"""
 <section class="secao rolavel" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
@@ -385,8 +384,6 @@ def gerar_html() -> str:
   </header>
   {nota_secao("milldesk", "Dois recortes da mesma fila: chamados com um desenvolvedor como responsável, "
                           "e chamados parados em status de desenvolvimento (com dono ou sem).")}
-  {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
-  {explica("dev_equipe")}
   {bloco_sistemas}
   <h3 class="kpi-rotulo bloco-fixo">Por desenvolvedor</h3>
   <div class="grade grade-dev bloco-elastico">{''.join(cards_dev) or '<p class="vazio bloco-elastico">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
