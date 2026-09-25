@@ -153,13 +153,30 @@ def gerar_html() -> str:
     v_fila = (helpdesk or {}).get("fila_total_abertos")
     s_fila, b_fila = par(v_fila, "fila_abertos", "menor")
 
+    v_dev = dev.get("total_atribuidos_a_devs")
+    # Sem técnico no campo do chamado. Sai da contagem da fila inteira
+    # (fila.por_tecnico), não da amostra. Sem série no histórico: sem badge.
+    por_tecnico_fila = fila.get("por_tecnico")
+    v_sem = (por_tecnico_fila.get("(sem tecnico)", 0)
+             if isinstance(por_tecnico_fila, dict) else None)
+
+    # Rodapé que fecha a conta do total: "com devs" e "sem atribuição" são dois
+    # recortes, não a fila inteira -- o resto está com técnicos que não são devs
+    # (suporte e outros). Só aparece quando os três números existem e o resto
+    # não sai negativo; senão o rodapé mentiria.
+    rodape_fila = ""
+    if all(isinstance(x, int) for x in (v_fila, v_dev, v_sem)) and v_fila - v_dev - v_sem >= 0:
+        rodape_fila = (f'<b>{fmt_num(v_dev)}</b> com devs · '
+                       f'<b>{fmt_num(v_fila - v_dev - v_sem)}</b> com outros técnicos · '
+                       f'<b>{fmt_num(v_sem)}</b> sem atribuição')
+
     cartoes = [
         card_sino("Atendimentos Fechados", v_atend, sub="Equipe Suporte",
                   seta=s_atend, delta=b_atend,
                   rodape=f'último dia útil: <b>{esc(atend.get("dia") or "—")}</b>',
                   explicacao=explica("atend_fechados"), indice=0),
         card_sino("Total de Tickets na Fila", v_fila, seta=s_fila, delta=b_fila,
-                  explicacao=explica("fila_total"), indice=1),
+                  rodape=rodape_fila, explicacao=explica("fila_total"), indice=1),
     ]
     for i, rotulo_sis in enumerate(SISTEMAS_DESTAQUE):
         valor = por_sistema.get(rotulo_sis)
@@ -171,18 +188,12 @@ def gerar_html() -> str:
             rodape="" if valor is not None else "recorte por sistema ainda não coletado",
             explicacao=explica("fila_sistema"), indice=2 + i))
 
-    v_dev = dev.get("total_atribuidos_a_devs")
     s_dev, b_dev = par(v_dev, "dev_atribuidos", "menor")
     cartoes.append(card_sino(
         "Tickets com Devs.", v_dev, seta=s_dev, delta=b_dev,
         rodape=f'<b>{fmt_num(dev.get("total_em_status_dev"))}</b> em status de desenvolvimento' if dev else "",
         explicacao=explica("dev_atribuidos"), indice=2 + len(SISTEMAS_DESTAQUE)))
 
-    # Sem técnico no campo do chamado. Sai da contagem da fila inteira
-    # (fila.por_tecnico), não da amostra. Sem série no histórico: sem badge.
-    por_tecnico_fila = fila.get("por_tecnico")
-    v_sem = (por_tecnico_fila.get("(sem tecnico)", 0)
-             if isinstance(por_tecnico_fila, dict) else None)
     cartoes.append(card_sino(
         "Tickets sem atribuição", v_sem,
         rodape="nenhum técnico responsável" if v_sem is not None else "",
