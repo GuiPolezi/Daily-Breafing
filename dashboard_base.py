@@ -788,6 +788,30 @@ a{color:inherit}
 .lic-nome{display:block;font-size:clamp(32px,min(6.4vh,3.6vw),66px);font-weight:800;line-height:.95;letter-spacing:-.01em}
 .lic-sub{display:block;font-size:clamp(14px,min(2.9vh,1.62vw),30px);font-weight:800;line-height:1.1;letter-spacing:.02em}
 .anim .lic-quique,.anim .lic-nome,.anim .lic-sub{opacity:0}
+/* menu em blocos do briefing de licenças (substitui o favo). Parente do .menu-sino do
+   tema SINO, mas com bloco mais alto e borda -- e vive no CSS base porque esta página
+   não carrega CSS_SINO. Mesmas duas lições do .menu-sino, não desfaça:
+   - coluna com largura EXPLÍCITA, nunca 1fr: a caixa é shrink-to-fit e 1fr resolve a 0;
+   - transform fora da transition até o JS pôr .pronto (senão a entrada GSAP congela).
+   A altura do bloco sai do --topo-h: duas linhas + o gap sempre cabem no topo,
+   inclusive nos degraus de altura (820px/680px).                                    */
+.menu-lic-caixa{flex:0 0 auto;display:flex;align-items:center}
+.menu-lic{display:grid;--bloco-w:clamp(84px,7.2vw,112px);--menu-gap:clamp(8px,calc(4.4vh - 12px),30px);
+  grid-template-columns:repeat(3,var(--bloco-w));gap:var(--menu-gap) calc(var(--menu-gap) * 1.05)}
+.menu-lic .grid-item{display:flex;align-items:center;justify-content:center;text-align:center;min-width:0;
+  height:min(96px,calc((var(--topo-h) - 24px - var(--menu-gap)) / 2));
+  padding:4px clamp(6px,.7vw,12px);border:2px solid #1A9A63;border-radius:clamp(12px,1.1vw,17px);
+  background:#217A56;color:#fff;text-decoration:none;
+  font:700 clamp(11px,min(1.95vh,1.08vw),16.5px)/1.15 var(--sans);letter-spacing:-.01em;
+  box-shadow:0 10px 20px -14px rgba(9,81,47,.6);
+  transition:background .22s var(--ease),color .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease)}
+.menu-lic.pronto .grid-item{transition:background .22s var(--ease),color .22s var(--ease),
+  border-color .22s var(--ease),box-shadow .22s var(--ease),transform .22s var(--ease)}
+.menu-lic .grid-item:hover{background:#0F8154;border-color:#22B06F;transform:translateY(-2px);box-shadow:0 14px 24px -14px rgba(9,81,47,.75)}
+.menu-lic .grid-item.ativa{background:#E1BF4B;border-color:#F6C445;color:#0C5A37;box-shadow:0 10px 20px -14px rgba(122,90,0,.6)}
+.menu-lic .grid-item.ativa:hover{background:#EAC857}
+.menu-lic .grid-item:focus-visible{outline:2px solid #09512F;outline-offset:3px}
+.anim .menu-lic .grid-item{opacity:0}
 .carimbo{flex:0 0 auto;margin:0 0 8px calc(var(--pad) - 2px);font-size:var(--t-meta);font-weight:700;color:var(--carimbo);letter-spacing:.01em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .carimbo .sep{opacity:.55}
 .carimbo .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:2px 10px;border-radius:999px;text-decoration:none}
@@ -1025,6 +1049,10 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   .lic-logo{width:48px;height:48px}
   .lic-nome{font-size:28px}
   .lic-sub{font-size:12.5px}
+  /* aqui 1fr é correto: a caixa ocupa a linha inteira (largura definida) */
+  .menu-lic-caixa{flex:1 0 100%}
+  .menu-lic{width:100%;grid-template-columns:repeat(3,minmax(0,1fr));--menu-gap:8px}
+  .menu-lic .grid-item{height:auto;min-height:40px;font-size:13px;border-radius:12px}
   .favo{height:auto;flex:1 0 100%;justify-content:flex-start}
   .favo-svg{display:none !important}
   .menu-simples{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;width:100%}
@@ -1070,7 +1098,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   .palco{display:block;height:auto}
   .topo{height:auto}
   .abelha,.wordmark .w,.wordmark .traco,.lic-quique,.lic-nome,.lic-sub{opacity:1 !important;transform:none !important}
-  .favo,.slider-controles,.acoes{display:none}
+  .favo,.menu-lic-caixa,.slider-controles,.acoes{display:none}
   .colmeia{overflow:visible;background:none}
   .secao{position:static;opacity:1;visibility:visible;transform:none;overflow:visible;break-inside:avoid;background:var(--mel);border-radius:24px;margin-bottom:12px}
   .slides-janela{overflow:visible}
@@ -1645,6 +1673,22 @@ JS_HEADER = """
         .from(licTexto, { x: -18, opacity: 0, duration: .8, stagger: .12, ease: "power3.out" }, .35);
     }
 
+    // menu em blocos (licenças): Staggered Grid Reveal, do centro para fora
+    var menuLic = doc.querySelector(".menu-lic"), blocosLic = doc.querySelectorAll(".menu-lic .grid-item");
+    if (menuLic && blocosLic.length) {
+      // O MENU NÃO PODE DEPENDER DA ANIMAÇÃO PARA EXISTIR: ao fim da entrada (ou pelo
+      // setTimeout, se a linha do tempo travar) os blocos voltam a ser 100% CSS e o
+      // .pronto devolve o transform à transition do hover. Mesmo padrão do .menu-sino.
+      var liberarMenu = function(){
+        g.killTweensOf(blocosLic);
+        g.set(blocosLic, { clearProps: "transform,opacity,translate,rotate,scale" });
+        menuLic.classList.add("pronto");
+      };
+      tl.from(blocosLic, { scale: 0, opacity: 0, duration: .4, stagger: { amount: .6, from: "center" },
+                           ease: "back.out(1.7)", onComplete: liberarMenu }, .35);
+      win.setTimeout(liberarMenu, 2400);
+    }
+
     // favo de mel: anima só a variante visível agora (a outra está em display:none)
     var favo = Array.prototype.filter.call(doc.querySelectorAll(".favo-svg"), function(s){ return s.getBoundingClientRect().width > 0; })[0];
     if (favo) {
@@ -1720,7 +1764,9 @@ JS_HEADER = """
       // o letreiro (ou a marca SINO inteira) anda menos que a abelha
       var alvoW = temAbelha ? wordmark : (temLosango ? marca : null);
       var wx = alvoW ? g.quickTo(alvoW, "x", opc) : nada, wy = alvoW ? g.quickTo(alvoW, "y", opc) : nada;
-      var fx = g.quickTo(".favo-svg", "x", opc), fy = g.quickTo(".favo-svg", "y", opc);  // favo em outra profundidade
+      // favo em outra profundidade; o menu em blocos não entra no parallax (alvo de clique não foge do cursor)
+      var temFavo = !!doc.querySelector(".favo-svg");
+      var fx = temFavo ? g.quickTo(".favo-svg", "x", opc) : nada, fy = temFavo ? g.quickTo(".favo-svg", "y", opc) : nada;
       var mover = function(nx, ny){ ax(nx * 9); ay(ny * 7); wx(nx * 4); wy(ny * 3); fx(nx * -5); fy(ny * -4); };
       win.addEventListener("pointermove", function(e){
         if (!mq.matches || e.pointerType === "touch") return;
@@ -2537,6 +2583,20 @@ def logo_sino_licencas(alvo: str = "destaques") -> str:
     <span class="lic-logo"><span class="lic-quique">{LOSANGO_SVG}</span></span>
     <h1 class="lic-texto"><span class="lic-nome">SINO</span><span class="lic-sub">LICENÇAS</span></h1>
   </a>"""
+
+
+def menu_licencas(ordem: list[tuple[str, str]]) -> str:
+    """Menu em blocos do briefing de licenças: 3 colunas, bloco ativo em ouro.
+
+    Cada bloco é um [data-alvo], então o JS_UI cuida do estado ativo; a entrada
+    (Staggered Grid Reveal) fica no JS_HEADER. A ordem dos blocos é só a do menu:
+    a navegação por setas segue a ordem das seções na página.
+    """
+    itens = "".join(
+        f'<a class="grid-item" href="#{esc(id_)}" data-alvo="{esc(id_)}">{esc(rotulo)}</a>'
+        for id_, rotulo in ordem)
+    return (f'<nav class="menu-lic-caixa" aria-label="Seções do painel">'
+            f'<div class="menu-lic">{itens}</div></nav>')
 
 
 def menu_grade(ordem: list[tuple[str, str]], colunas: int = 3) -> str:

@@ -27,13 +27,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI,
+    CHEVRON_SVG, CSS, JS_CHARTS, JS_HEADER, JS_UI,
     RAIZ, agrupar_licencas_por, badge_delta, barras_distribuicao, card_grafico,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
     comparar_licencas,
     data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica, faixas_de_prazo,
-    favo_svg, fmt_num, logo_sino_licencas, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
-    ler_json, markdown_para_html, nota_secao, num_html, redigir_nomes, secao_vazia,
+    fmt_num, logo_sino_licencas, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
+    ler_json, markdown_para_html, menu_licencas, nota_secao, num_html, redigir_nomes, secao_vazia,
     serie_historico,
     serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
 )
@@ -42,14 +42,15 @@ RELATORIO = RAIZ / "relatorio_licencas.md"
 SAIDA = RAIZ / "dashboard_licencas.html"
 DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
 
-# Seis seções, as mesmas seis células do favo. O id "briefing" é mantido porque
-# o JS reaproveitado depende dele (setas do slider); "evolucao", por causa dos gráficos.
-FAVO_ORDEM_FIN = [
-    ("destaques", "Panorama"), ("briefing", "Relatório"), ("radar", "Radar"),
+# Seis seções, seis blocos do menu. O id "briefing" é mantido porque o JS
+# reaproveitado depende dele (setas do slider); "evolucao", por causa dos gráficos.
+# A ordem e os rótulos são SÓ os do menu (decisão do Guilherme, 28/09/2026): o bloco
+# "Licenças" leva à seção "radar", que segue com o título Radar e no mesmo lugar da
+# página -- as setas continuam navegando na ordem das seções.
+MENU_ORDEM = [
+    ("destaques", "Panorama"), ("radar", "Licenças"), ("briefing", "Relatório"),
     ("movimentacao", "Mudanças"), ("evolucao", "Evolução"), ("fontes", "Fonte"),
 ]
-FAVO_NAV_FIN = {(-1, 1): "destaques", (0, -1): "briefing", (1, -1): "radar",
-                (-1, 0): "movimentacao", (1, 0): "evolucao", (0, 0): "fontes"}
 
 # Só o que o diário não tem. Nomes novos não colidem com as classes existentes.
 
@@ -368,9 +369,7 @@ def gerar_html() -> str:
     elif estado == "indisponivel":
         aviso = '<a class="aviso grave" href="#fontes" data-alvo="fontes">fonte indisponível</a>'
 
-    favo_cheio, _ = favo_svg(FAVO_CHEIO, passo=63, fonte=12, classe="favo-cheio", nav=FAVO_NAV_FIN, ordem=FAVO_ORDEM_FIN)
-    favo_compacto, _ = favo_svg(FAVO_COMPACTO, passo=66, fonte=12, classe="favo-compacto", nav=FAVO_NAV_FIN, ordem=FAVO_ORDEM_FIN)
-    menu_simples = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in FAVO_ORDEM_FIN)
+    menu_html = menu_licencas(MENU_ORDEM)
 
     payload = {"labels": serie["labels"], "secao": "evolucao", "graficos": graficos_payload}
     script = f"<script>{JS_UI}</script>"
@@ -397,11 +396,7 @@ def gerar_html() -> str:
 <div class="palco">
 <header class="topo">
   {logo_sino_licencas()}
-  <nav class="favo" aria-label="Seções do painel">
-    {favo_cheio}
-    {favo_compacto}
-    <div class="menu-simples">{menu_simples}</div>
-  </nav>
+  {menu_html}
 </header>
 <p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{aviso}</p>
 <main class="colmeia" id="colmeia">
