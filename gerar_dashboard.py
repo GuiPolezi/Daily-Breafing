@@ -619,9 +619,9 @@ def gerar_html() -> str:
 {secao_briefing}
 {secao_dev}
 {secao_licencas}
-{secao_agenda_html}
 {secao_evolucao}
 {secao_eficacia}
+{secao_agenda_html}
 {secao_fontes}
 </main>
 </div>
