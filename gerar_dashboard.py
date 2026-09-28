@@ -111,8 +111,6 @@ def gerar_html() -> str:
     # --- blocos novos do helpdesk (ausentes até o coletor rodar de novo)
     fila = dic((helpdesk or {}).get("fila"))
     por_sistema = dic(fila.get("por_sistema"))
-    idade = dic(fila.get("idade"))
-    por_status = dic(fila.get("por_status"))
     resumo_sistema = dic(fila.get("por_sistema_resumo"))
     amostra_de = dic((helpdesk or {}).get("tickets_por_sistema_amostra_de"))
     dev = dic((helpdesk or {}).get("desenvolvimento"))
@@ -529,8 +527,10 @@ def gerar_html() -> str:
 </section>"""
 
     # ================================================================ 6. SUPORTE (eficácia)
+    # Igual ao dashboard_diretor.html (decisão do Guilherme, 28/09/2026): ranking +
+    # um card por técnico monitorado. O id segue "eficacia", que é o do menu desta página.
     if MOSTRAR_RANKING and rank["tecnicos"]:
-        titulo_rank, nomes_rank, valores_rank = "Ranking Semanal por Técnico", rank["tecnicos"], rank["valores"]
+        titulo_rank, nomes_rank, valores_rank = "Atendimentos por técnico", rank["tecnicos"], rank["valores"]
     elif rank["dias"]:
         titulo_rank, nomes_rank, valores_rank = "Atendimentos da equipe por dia", rank["dias"], rank["totais"]
     else:
@@ -538,41 +538,35 @@ def gerar_html() -> str:
     if not nomes_rank:
         secao_eficacia = secao_vazia("eficacia", "Suporte", "Sem registros de atendimentos no histórico.")
     else:
-        dias_txt = ", ".join(rank["dias"])
-        nota_rank = "" if MOSTRAR_RANKING else " · ranking por técnico desativado"
-        painel_idade = barras_distribuicao({
-            "Até 7 dias": idade.get("ate_7_dias"), "8 a 30 dias": idade.get("de_8_a_30_dias"),
-            "31 a 90 dias": idade.get("de_31_a_90_dias"), "Mais de 90 dias": idade.get("mais_de_90_dias"),
-        }, limite=4, criticos=("Mais de 90 dias",)) if idade else ""
-        painel_status = barras_distribuicao(por_status, limite=6) if por_status else ""
-        blocos_fila = ""
-        if painel_idade or painel_status:
-            blocos_fila = f"""
-  <div class="grade larga graficos quatro bloco-elastico">
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Idade dos chamados na fila</h3>{tag_fonte("milldesk")}</div>
-      {painel_idade or '<p class="dist-vazio">Sem dados de idade.</p>'}
-      {explica("idade_fila")}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Fila por status</h3>{tag_fonte("milldesk")}</div>
-      {painel_status or '<p class="dist-vazio">Sem dados de status.</p>'}
-      {explica("fila_total")}
-    </article>
-  </div>"""
+        # Um card por técnico monitorado (HELPDESK_AGENT_NAME). "abertos" vem do
+        # coletor e já conta todos os status menos os excluídos (hoje só Fechado).
+        # Com o ranking desligado, o nome vira "Técnico N" — mesma regra dos demais.
+        por_agente = dic((helpdesk or {}).get("por_agente"))
+        agentes = (helpdesk or {}).get("agentes_monitorados")
+        agentes = agentes if isinstance(agentes, list) else []  # string corrompida iteraria letra a letra
+        cards_tecnicos = [
+            card_sino(f"Tickets com {nome.split()[0]}" if MOSTRAR_RANKING else f"Técnico {i + 1}",
+                      dic(por_agente.get(nome)).get("abertos"),
+                      explicacao=explica("tickets_tecnico"), indice=i)
+            for i, nome in enumerate(agentes)
+            if isinstance(nome, str) and nome.strip()
+        ]
+        grade_tecnicos = (f'<div class="grade painel-exec bloco-fixo">{"".join(cards_tecnicos)}</div>'
+                          if cards_tecnicos else "")
         secao_eficacia = f"""
 <section class="secao rolavel" id="eficacia" data-scroll aria-labelledby="t-eficacia">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Suporte", "eficacia")}
-    <div class="lado"><div class="kpi-medida" title="{esc(dias_txt)}"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p><p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
+    <div class="lado"><div class="kpi-medida"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p>
+      <p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
   </header>
-  {nota_secao("milldesk", "Produtividade do suporte: atendimentos fechados por técnico, mais o estado da fila em aberto.")}
-  <article class="card card-ranking bloco-elastico" style="--i:0" data-scroll>
-    <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3><p class="kpi-legenda">soma dos últimos {len(rank["dias"])} dia(s) útil(eis) registrado(s){esc(nota_rank)}</p></div>
+  {nota_secao("milldesk", "Produtividade do suporte e estado da fila em aberto.")}
+  <article class="card card-ranking bloco-elastico" data-scroll>
+    <div class="kpi-cabeca"><h3 class="kpi-rotulo">{esc(titulo_rank)}</h3>{tag_fonte("historico")}</div>
     {render_ranking(nomes_rank, valores_rank)}
     {explica("ranking")}
   </article>
-  {blocos_fila}
+  {grade_tecnicos}
 </section>"""
 
     # ================================================================ 7. FONTES
