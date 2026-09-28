@@ -25,7 +25,6 @@ from dashboard_base import (
     JS_CHARTS, JS_HEADER_SINO, JS_UI,
     LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino, secao_agenda,
-    cards_equipes_dev,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, classificar_licenca,
     coletar_nomes_tecnicos, data_do_briefing, dividir_briefing, esc, explica,
     fmt_num, grafico, grupo_fonte, json_inline, label_dia, ler_historico, ler_json, logo_sino,
@@ -302,6 +301,9 @@ def gerar_html() -> str:
   </div>
 </section>"""
 
+    # Gráficos de todas as seções (Análise e Evolução); cada um diz a sua.
+    graficos_payload: list[dict] = []
+
     # ================================================================ 3. DESENVOLVIMENTO
     if not dev:
         secao_dev = secao_vazia(
@@ -313,29 +315,34 @@ def gerar_html() -> str:
             "Nenhum desenvolvedor configurado. Preencha HELPDESK_DEV_NAMES no .env "
             "(rode `python coletores/check_helpdesk.py --listar-categorias` para ver os nomes reais).")
     else:
+        # Igual ao dashboard_diretor.html (decisão do Guilherme, 28/09/2026): sem os cards
+        # por equipe, tabela com TODOS os sistemas e, na Análise, carga por dev + por sistema.
+        carga = {}
         cards_dev = []
-        for i, (nome, bloco) in enumerate(sorted(por_dev.items(), key=lambda kv: -(dic(kv[1]).get("abertos") or 0))):
+        ordenados = sorted(por_dev.items(), key=lambda kv: -(dic(kv[1]).get("abertos") or 0))
+        for i, (nome, bloco) in enumerate(ordenados):
             b = dic(bloco)
-            nome_exibido = esc(nome) if MOSTRAR_RANKING else f"Desenvolvedor {i + 1}"
-            chips = "".join(
-                f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
-                for k, v in list(dic(b.get("por_sistema")).items())[:LIMITE_SISTEMAS])
-            antigo = b.get("mais_antigo_dias")
+            rotulo = nome if MOSTRAR_RANKING else f"Desenvolvedor {i + 1}"
+            carga[rotulo] = b.get("abertos")
             # total_no_nome é espelho de abertos; o fallback mantém a página de pé
             # com um helpdesk.json gravado antes desses campos existirem.
             total_nome = b.get("total_no_nome", b.get("abertos"))
             em_trabalho = b.get("em_trabalho")
             outros = (total_nome - em_trabalho
                       if isinstance(total_nome, int) and isinstance(em_trabalho, int) else None)
+            antigo = b.get("mais_antigo_dias")
             linha_trabalho = ""
             if em_trabalho is not None:
                 linha_trabalho = (
                     f'<p class="kpi-mini destaque-trabalho">'
                     f'<span><b>{fmt_num(em_trabalho)}</b> em trabalho ativo</span>'
                     f'<span><b>{fmt_num(outros)}</b> em outros status</span></p>')
+            chips = "".join(
+                f'<span class="chip">{esc(k)} <b>{fmt_num(v)}</b></span>'
+                for k, v in list(dic(b.get("por_sistema")).items())[:LIMITE_SISTEMAS])
             cards_dev.append(f"""
 <article class="card kpi card-dev" style="--i:{i}" data-scroll>
-  <div class="kpi-cabeca"><p class="dev-nome">{nome_exibido}</p></div>
+  <div class="kpi-cabeca"><p class="dev-nome">{esc(rotulo)}</p></div>
   <p class="kpi-numero menor">{num_html(total_nome)}</p>
   <p class="kpi-legenda">no nome do dev<br><b>{fmt_num(b.get("novos_hoje"))}</b> novos hoje</p>
   {linha_trabalho}
@@ -343,16 +350,28 @@ def gerar_html() -> str:
      <span><b>{fmt_num(antigo) if antigo is not None else "—"}</b> dias o mais antigo</span></p>
   <div class="dev-sistemas">{chips or '<span class="dist-vazio">sem quebra por sistema</span>'}</div>
 </article>""")
-
-        painel_sistema = barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)
-        tickets_dev = dev.get("tickets_em_status_dev") if isinstance(dev.get("tickets_em_status_dev"), list) else []
-        dev_amostra_de = dev.get("tickets_em_status_dev_amostra_de") or dev.get("total_em_status_dev")
-        # Sistemas sem card nos Destaques: sem esta tabela, a página não mostrava
-        # quantos chamados eles têm em aberto.
-        tabela = tabela_sistemas(fila, SISTEMAS_DESTAQUE)
-        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Demais sistemas · chamados em aberto</h3>'
+        # Carga por desenvolvedor: barra vertical (Chart.js). Rótulo em lista de
+        # palavras quebra o nome em linhas em vez de girar ou cortar. Sem a
+        # biblioteca, volta às barras horizontais de HTML puro.
+        carga_num = {k: v for k, v in carga.items() if isinstance(v, (int, float))}
+        if chart_js is not None and carga_num:
+            graficos_payload.append(grafico(
+                "chartCargaDev", "Chamados no nome", list(carga_num.values()), tipo="barra",
+                cor="oliva", labels=[str(k).split() or [str(k)] for k in carga_num],
+                secao="desenv-analise"))
+            corpo_carga = ('<div class="grafico-caixa"><canvas id="chartCargaDev" role="img" '
+                           'aria-label="Carga por desenvolvedor: '
+                           + esc(", ".join(f"{k} {v}" for k, v in carga_num.items())) + '"></canvas></div>')
+        else:
+            corpo_carga = barras_distribuicao(carga, limite=10)
+        card_carga = f"""<article class="card card-grafico" data-scroll>
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Carga por desenvolvedor</h3></div>
+      {corpo_carga}
+      {explica("dev_atribuidos")}
+    </article>"""
+        tabela = tabela_sistemas(fila, [])
+        bloco_sistemas = (f'<h3 class="kpi-rotulo bloco-fixo">Todos os sistemas · chamados em aberto</h3>'
                           f'{tabela}{explica("fila_sistema")}') if tabela else ""
-
         secao_dev = f"""
 <section class="secao rolavel" id="desenvolvimento" data-scroll aria-labelledby="t-desenvolvimento">
   <header class="secao-cabeca dividida bloco-fixo">
@@ -362,41 +381,28 @@ def gerar_html() -> str:
       <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">Tickets em status de desenvolvimento</p></div>
     </div>
   </header>
-  {nota_secao("milldesk", "Dois recortes diferentes da mesma fila: chamados que têm um desenvolvedor como responsável, "
-                          "e chamados parados em status de desenvolvimento (tenham dono ou não).")}
-  <h3 class="kpi-rotulo bloco-fixo">Por equipe</h3>
-  {cards_equipes_dev(dic(dev.get("por_equipe")), mostrar_nomes=MOSTRAR_RANKING)}
-  {explica("dev_equipe")}
+  {nota_secao("milldesk", "Dois recortes da mesma fila: chamados com um desenvolvedor como responsável, "
+                          "e chamados parados em status de desenvolvimento (com dono ou sem).")}
   {bloco_sistemas}
   <h3 class="kpi-rotulo bloco-fixo">Por desenvolvedor</h3>
   <div class="grade grade-dev bloco-elastico">{''.join(cards_dev) or '<p class="vazio bloco-elastico">Nenhum chamado atribuído aos desenvolvedores configurados.</p>'}</div>
   {explica("dev_em_trabalho")}
 </section>
 
-<section class="secao rolavel" id="desenv-analise" data-scroll aria-labelledby="t-desenv-analise">
+<section class="secao" id="desenv-analise" data-scroll aria-labelledby="t-desenv-analise">
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Análise do desenvolvimento", "desenv-analise")}
     <div class="lado">
       <div class="kpi-medida"><p class="kpi-numero menor">{num_html(dev.get("total_em_status_dev"))}</p><p class="kpi-legenda">em status de desenvolvimento</p></div>
     </div>
   </header>
-  <div class="grade larga graficos quatro bloco-elastico">
+  <div class="grade duas-colunas-secao bloco-elastico">
+    {card_carga}
     <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em status de desenvolvimento · por sistema</h3></div>
-      {painel_sistema}
+      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · por sistema</h3></div>
+      {barras_distribuicao(dic(dev.get("em_status_dev_por_sistema")), limite=LIMITE_SISTEMAS)}
       {explica("fila_sistema")}
     </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Em desenvolvimento · corretivo x evolutivo</h3></div>
-      {barras_distribuicao(dic(dev.get("em_status_dev_por_natureza")), limite=6, criticos=("Corretivo",))}
-      {explica("natureza")}
-    </article>
-  </div>
-  <div class="serie bloco-fixo">
-    <div class="acoes"><button class="pilula" type="button" aria-expanded="false" aria-controls="dev-tickets"><span class="pilula-texto">Ver chamados em status de desenvolvimento ({fmt_num(min(len(tickets_dev), 20))} de {fmt_num(dev_amostra_de)})</span>{CHEVRON_SVG}</button></div>
-    <div class="expansivel" id="dev-tickets"><div><div class="expansivel-pad">
-      {tabela_tickets(tickets_dev, limite=20, com_tecnico=MOSTRAR_RANKING)}
-    </div></div></div>
   </div>
 </section>"""
 
@@ -446,7 +452,6 @@ def gerar_html() -> str:
     serie = serie_historico(historico, DIAS_GRAFICO)
     rank = ranking_semanal(historico)
     n_dias = len(serie["labels"])
-    graficos_payload: list[dict] = []
     if not n_dias:
         secao_evolucao = secao_vazia("evolucao", "Evolução", "Histórico indisponível (historico/metricas.jsonl vazio ou ausente).")
     else:
@@ -496,7 +501,7 @@ def gerar_html() -> str:
         if chart_js is None:
             corpo_evolucao = ('<p class="vazio bloco-elastico">Gráficos indisponíveis nesta geração (biblioteca de gráficos não encontrada). '
                               'Os dados seguem na tabela abaixo.</p>')
-            graficos_payload = []
+            graficos_payload = []  # sem Chart.js nenhum gráfico entrou (a carga já caiu nas barras HTML)
         elif not cartoes:
             corpo_evolucao = '<p class="vazio bloco-elastico">Ainda não há série suficiente para desenhar gráficos.</p>'
         else:
