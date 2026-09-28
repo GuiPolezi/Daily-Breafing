@@ -28,7 +28,7 @@ from pathlib import Path
 
 from dashboard_base import (
     CHEVRON_SVG, CSS, CSS_SINO, JS_CHARTS, JS_HEADER, JS_UI,
-    RAIZ, agrupar_licencas_por, badge_delta, barras_distribuicao, card_grafico,
+    RAIZ, badge_delta, card_grafico,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
     comparar_licencas,
     data_do_briefing, dividir_briefing, esc,
@@ -45,9 +45,9 @@ DIAS_GRAFICO = cfg_int("DASHBOARD_DIAS_GRAFICO", 30)
 
 # Seis seções, seis blocos do menu. O id "briefing" é mantido porque o JS
 # reaproveitado depende dele (setas do slider); "evolucao", por causa dos gráficos.
-# A ordem e os rótulos são SÓ os do menu (decisão do Guilherme, 28/09/2026): o bloco
-# "Licenças" leva à seção "radar", que segue com o título Radar e no mesmo lugar da
-# página -- as setas continuam navegando na ordem das seções.
+# O bloco "Licenças" leva à seção "radar", que segue com o título Radar (decisão do
+# Guilherme, 28/09/2026). A ordem das seções na página acompanha a do menu -- é ela
+# que as setas, a roda do mouse e a rolagem do celular percorrem.
 MENU_ORDEM = [
     ("destaques", "Panorama"), ("radar", "Licenças"), ("briefing", "Relatório"),
     ("movimentacao", "Mudanças"), ("evolucao", "Evolução"), ("fontes", "Fonte"),
@@ -172,6 +172,61 @@ def card_vencimento(titulo: str, sub: str, destaque: dict | None, vazio: str, to
 </article>"""
 
 
+def agrupar_por_cliente_data(itens, mais_recente: bool) -> list[dict]:
+    """Uma entrada por cliente + data de vencimento, com os sistemas daquela data.
+
+    Vencidas: `mais_recente` -> maior `dias` primeiro (a que acabou de vencer).
+    Vencendo: menor `dias` primeiro. Sem data legível vai para o fim nas duas.
+    """
+    grupos: dict[tuple, dict] = {}
+    for i in (itens or []):
+        if not isinstance(i, dict):
+            continue
+        cliente = str(i.get("cliente") or "").strip() or "(cliente não informado)"
+        venc = str(i.get("vencimento") or "").strip()
+        g = grupos.setdefault((cliente, venc), {"cliente": cliente, "vencimento": venc,
+                                                "dias": i.get("dias"), "sistemas": []})
+        sistema = str(i.get("sistema") or "").strip() or "(sistema não informado)"
+        if sistema not in g["sistemas"]:
+            g["sistemas"].append(sistema)
+
+    def chave(g: dict):
+        d = g["dias"] if isinstance(g["dias"], int) else None
+        sem_data = d is None
+        ordem = 0 if sem_data else (-d if mais_recente else d)
+        return (sem_data, ordem, g["cliente"].casefold())
+    return sorted(grupos.values(), key=chave)
+
+
+def faixa_grupo_lic(rotulo: str, tom: str, texto: str) -> str:
+    """Faixa que abre um grupo de cards de licença: pílula colorida + explicação."""
+    return (f'<div class="faixa-grupo bloco-fixo"><span class="pilula-fonte lic-pilula {tom}">'
+            f'<span class="ponto" aria-hidden="true"></span>{esc(rotulo)}</span>'
+            f'<p class="faixa-grupo-texto">{esc(texto)}</p></div>')
+
+
+def grade_lic(grupos: list[dict], estado: str, vazio: str) -> str:
+    """Grade de cards (cliente, data, prazo e sistemas) de um grupo de licenças."""
+    if not grupos:
+        return f'<p class="lic-grupo-vazio bloco-fixo">{esc(vazio)}</p>'
+    cards = []
+    for g in grupos:
+        d = g["dias"] if isinstance(g["dias"], int) else None
+        dias = ""
+        if estado == "vencendo":
+            dias = ("sem data" if d is None else "Hoje" if d == 0 else f"Em {d} d")
+            dias = f'<span class="lic-item-dias">{esc(dias)}</span>'
+        chips = "".join(f'<span class="lic-chip">{esc(x)}</span>' for x in g["sistemas"])
+        cards.append(f"""
+<article class="lic-item {estado}">
+  <div class="lic-item-topo"><h3 class="lic-item-cliente">{esc(g["cliente"])}</h3>
+    <p class="lic-item-prazo">{esc(g["vencimento"] or "—")}{dias}</p></div>
+  <p class="lic-item-rotulo">Sistemas</p>
+  <div class="lic-item-sistemas">{chips}</div>
+</article>""")
+    return f'<div class="grade lic-grade bloco-elastico">{"".join(cards)}</div>'
+
+
 def gerar_html() -> str:
     agora = datetime.now()
     licencas, erro = ler_json("licencas.json")
@@ -274,49 +329,27 @@ def gerar_html() -> str:
   </div>
 </section>"""
 
-    # ============================================================= 3. RADAR
+    # ============================================================= 3. LICENÇAS (id "radar")
+    # Cards por cliente + data (design do Guilherme, 28/09/2026): vencidas da mais recente
+    # para a mais antiga, vencendo da mais próxima para a mais distante. O id segue
+    # "radar" (menu e âncoras); o título passou a ser "Licenças", como no menu.
     if not itens:
-        secao_radar = secao_vazia("radar", "Radar", "Nenhuma licença vencida recentemente ou vencendo em breve.")
+        secao_radar = secao_vazia("radar", "Licenças", "Nenhuma licença vencida recentemente ou vencendo em breve.")
     else:
-        linhas = []
-        for it in itens:
-            d = it.get("dias")
-            vencida = it.get("estado") == "vencida"
-            if d is None:
-                prazo = "—"
-            elif d < 0:
-                prazo = f"há {abs(d)} d"
-            elif d == 0:
-                prazo = "hoje"
-            else:
-                prazo = f"em {d} d"
-            urgente = " urgente" if (not vencida and d is not None and d <= 7) else ""
-            linhas.append(
-                f'<tr><td><span class="pill {"vencida" if vencida else "vencendo"}">{"Vencida" if vencida else "Vencendo"}</span></td>'
-                f'<td>{esc(it.get("cliente"))}</td><td>{esc(it.get("sistema"))}</td>'
-                f'<td class="num">{esc(it.get("vencimento"))}</td><td class="num{urgente}">{prazo}</td></tr>')
+        janela_r = janela_licencas(licencas)
+        tem_janela_r = bool((licencas or {}).get("janela_dias"))
+        grupos_venc = agrupar_por_cliente_data((licencas or {}).get("vencidas_recentes"), mais_recente=True)
+        grupos_prox = agrupar_por_cliente_data((licencas or {}).get("vencendo_em_breve"), mais_recente=False)
+        texto_venc = f"Licenças que venceram nos últimos {janela_r} dias · da vencida mais recente para a mais antiga"
+        texto_prox = ((f"Licenças que vão vencer nos próximos {janela_r} dias" if tem_janela_r
+                       else "Licenças com vencimento próximo no painel") + " · da mais próxima para a mais distante")
         secao_radar = f"""
-<section class="secao" id="radar" aria-labelledby="t-radar">
-  <header class="secao-cabeca dividida bloco-fixo">
-    {titulo_secao("Radar", "radar")}
-    <p class="lado subtitulo">{len(itens)} licença(s) em risco · da mais urgente para a menos</p>
-  </header>
-  {nota_secao("licencas", "Ordenado pelo prazo: vencidas há mais tempo no topo, depois as que vencem antes.")}
-  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Licenças em risco">
-    <table class="tabela-lic"><caption class="sr-only">Licenças vencidas e vencendo, por urgência</caption>
-      <thead><tr><th scope="col">Situação</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
-      <tbody>{''.join(linhas)}</tbody></table>
-  </div>
-  <div class="grade larga graficos quatro bloco-elastico">
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Por sistema</h3>{tag_fonte("licencas")}</div>
-      {barras_distribuicao(agrupar_licencas_por(itens, "sistema"), limite=8)}
-    </article>
-    <article class="card" data-scroll>
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Clientes com mais licenças em risco</h3>{tag_fonte("licencas")}</div>
-      {barras_distribuicao(agrupar_licencas_por(itens, "cliente"), limite=8)}
-    </article>
-  </div>
+<section class="secao rolavel" id="radar" data-scroll aria-labelledby="t-radar">
+  <header class="secao-cabeca empilhada bloco-fixo">{titulo_secao("Licenças", "radar")}</header>
+  {faixa_grupo_lic("Vencidas", "", texto_venc)}
+  {grade_lic(grupos_venc, "vencida", f"Nenhuma licença venceu nos últimos {janela_r} dias.")}
+  {faixa_grupo_lic("Vencendo", "vencendo", texto_prox)}
+  {grade_lic(grupos_prox, "vencendo", "Nenhuma licença com vencimento próximo.")}
 </section>"""
 
     # ============================================================= 4. MUDANÇAS
@@ -473,8 +506,8 @@ def gerar_html() -> str:
 <p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(data_dados)}</span>{aviso}</p>
 <main class="colmeia" id="colmeia">
 {secao_destaques}
-{secao_briefing}
 {secao_radar}
+{secao_briefing}
 {secao_mov}
 {secao_evolucao}
 {secao_fontes}

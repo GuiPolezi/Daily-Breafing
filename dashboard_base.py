@@ -2883,6 +2883,37 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
 .pag-licencas .pilula-fonte.licencas{color:var(--verde-sino)}
 .pag-licencas .pilula-fonte.licencas .ponto{background:var(--verde-sino)}
 .lic-vazio{flex:1 1 auto;display:flex;align-items:center;font:600 clamp(13px,1.8vh,16px)/1.4 var(--sans);opacity:.8}
+/* ---- Seção Licenças (id "radar") do briefing de licenças: cards por cliente+data ----
+   Dois grupos, cada um aberto por uma faixa com pílula colorida. Vencidas em salmão
+   (#F8A885), vencendo em amarelo (#FFF480) -- cores do design do Guilherme, 28/09/2026.
+   A grade é a .grade da base (densidade por --card-min); o modificador só troca
+   auto-fit por auto-fill, para um grupo com 2 cards não esticar cada um até meia tela. */
+.grade.lic-grade{--card-min:230px;
+  grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--card-min)),1fr))}
+.lic-pilula{background:#F8A885;color:#9C2F14}
+.lic-pilula .ponto{background:#C8472B}
+.lic-pilula.vencendo{background:#FFF480;color:#6E6A00}
+.lic-pilula.vencendo .ponto{background:#A39E00}
+.lic-item{display:flex;flex-direction:column;gap:clamp(4px,.7vh,8px);min-width:0;
+  border-radius:clamp(14px,1.2vw,18px);padding:clamp(12px,1.4vh,16px) clamp(12px,1vw,16px);
+  box-shadow:0 10px 20px -14px rgba(9,40,25,.7)}
+.lic-item.vencida{background:#F8A885}
+.lic-item.vencendo{background:#FFF480}
+.lic-item-topo{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.lic-item-cliente{font:800 clamp(13px,1vw,15px)/1.2 var(--sans);letter-spacing:-.01em;overflow-wrap:anywhere}
+.lic-item.vencida .lic-item-cliente{color:#fff}
+.lic-item.vencendo .lic-item-cliente{color:var(--carvao)}
+.lic-item-prazo{flex:0 0 auto;text-align:right;font:800 clamp(12px,.9vw,14px)/1.25 var(--sans);color:var(--carvao)}
+.lic-item-dias{display:block;font-weight:800;color:#A39E00}
+.lic-item-rotulo{font:500 clamp(12px,.95vw,14px)/1.2 var(--sans)}
+.lic-item.vencida .lic-item-rotulo{color:rgba(255,255,255,.72)}
+.lic-item.vencendo .lic-item-rotulo{color:#7C7A55}
+.lic-item-sistemas{display:flex;flex-wrap:wrap;gap:5px}
+.lic-chip{display:inline-block;border-radius:999px;padding:2px 9px;font:700 10.5px/1.5 var(--sans)}
+.lic-item.vencida .lic-chip{background:#FDEEE7;color:#B4431F}
+.lic-item.vencendo .lic-chip{background:#F2EFBE;color:#6E6A00}
+.lic-grupo-vazio{font:600 var(--t-meta)/1.5 var(--sans);color:var(--sobre-secao-2)}
+
 /* No palco o card tem altura DEFINIDA (a grade divide o painel), então o que cresce
    com a tela é medido pela altura do card (cqh), não da janela: em 1600x900 o topo
    não cai em degrau nenhum e o vh inflava a fonte além do card. Fora do palco (celular)
