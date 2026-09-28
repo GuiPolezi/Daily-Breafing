@@ -33,7 +33,7 @@ from dashboard_base import (
     comparar_licencas,
     data_do_briefing, dividir_briefing, esc,
     aviso_janela_mudou, fmt_num, grupo_fonte, janela_licencas, janela_licencas_comparavel,
-    logo_sino_licencas, seta_delta, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
+    logo_sino_licencas, secao_cards_licencas, seta_delta, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
     ler_json, markdown_para_html, menu_licencas, nota_secao, num_html, redigir_nomes, secao_vazia,
     serie_historico,
     serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
@@ -172,61 +172,6 @@ def card_vencimento(titulo: str, sub: str, destaque: dict | None, vazio: str, to
 </article>"""
 
 
-def agrupar_por_cliente_data(itens, mais_recente: bool) -> list[dict]:
-    """Uma entrada por cliente + data de vencimento, com os sistemas daquela data.
-
-    Vencidas: `mais_recente` -> maior `dias` primeiro (a que acabou de vencer).
-    Vencendo: menor `dias` primeiro. Sem data legível vai para o fim nas duas.
-    """
-    grupos: dict[tuple, dict] = {}
-    for i in (itens or []):
-        if not isinstance(i, dict):
-            continue
-        cliente = str(i.get("cliente") or "").strip() or "(cliente não informado)"
-        venc = str(i.get("vencimento") or "").strip()
-        g = grupos.setdefault((cliente, venc), {"cliente": cliente, "vencimento": venc,
-                                                "dias": i.get("dias"), "sistemas": []})
-        sistema = str(i.get("sistema") or "").strip() or "(sistema não informado)"
-        if sistema not in g["sistemas"]:
-            g["sistemas"].append(sistema)
-
-    def chave(g: dict):
-        d = g["dias"] if isinstance(g["dias"], int) else None
-        sem_data = d is None
-        ordem = 0 if sem_data else (-d if mais_recente else d)
-        return (sem_data, ordem, g["cliente"].casefold())
-    return sorted(grupos.values(), key=chave)
-
-
-def faixa_grupo_lic(rotulo: str, tom: str, texto: str) -> str:
-    """Faixa que abre um grupo de cards de licença: pílula colorida + explicação."""
-    return (f'<div class="faixa-grupo bloco-fixo"><span class="pilula-fonte lic-pilula {tom}">'
-            f'<span class="ponto" aria-hidden="true"></span>{esc(rotulo)}</span>'
-            f'<p class="faixa-grupo-texto">{esc(texto)}</p></div>')
-
-
-def grade_lic(grupos: list[dict], estado: str, vazio: str) -> str:
-    """Grade de cards (cliente, data, prazo e sistemas) de um grupo de licenças."""
-    if not grupos:
-        return f'<p class="lic-grupo-vazio bloco-fixo">{esc(vazio)}</p>'
-    cards = []
-    for g in grupos:
-        d = g["dias"] if isinstance(g["dias"], int) else None
-        dias = ""
-        if estado == "vencendo":
-            dias = ("sem data" if d is None else "Hoje" if d == 0 else f"Em {d} d")
-            dias = f'<span class="lic-item-dias">{esc(dias)}</span>'
-        chips = "".join(f'<span class="lic-chip">{esc(x)}</span>' for x in g["sistemas"])
-        cards.append(f"""
-<article class="lic-item {estado}">
-  <div class="lic-item-topo"><h3 class="lic-item-cliente">{esc(g["cliente"])}</h3>
-    <p class="lic-item-prazo">{esc(g["vencimento"] or "—")}{dias}</p></div>
-  <p class="lic-item-rotulo">Sistemas</p>
-  <div class="lic-item-sistemas">{chips}</div>
-</article>""")
-    return f'<div class="grade lic-grade bloco-elastico">{"".join(cards)}</div>'
-
-
 def gerar_html() -> str:
     agora = datetime.now()
     licencas, erro = ler_json("licencas.json")
@@ -330,27 +275,10 @@ def gerar_html() -> str:
 </section>"""
 
     # ============================================================= 3. LICENÇAS (id "radar")
-    # Cards por cliente + data (design do Guilherme, 28/09/2026): vencidas da mais recente
-    # para a mais antiga, vencendo da mais próxima para a mais distante. O id segue
-    # "radar" (menu e âncoras); o título passou a ser "Licenças", como no menu.
-    if not itens:
-        secao_radar = secao_vazia("radar", "Licenças", "Nenhuma licença vencida recentemente ou vencendo em breve.")
-    else:
-        janela_r = janela_licencas(licencas)
-        tem_janela_r = bool((licencas or {}).get("janela_dias"))
-        grupos_venc = agrupar_por_cliente_data((licencas or {}).get("vencidas_recentes"), mais_recente=True)
-        grupos_prox = agrupar_por_cliente_data((licencas or {}).get("vencendo_em_breve"), mais_recente=False)
-        texto_venc = f"Licenças que venceram nos últimos {janela_r} dias · da vencida mais recente para a mais antiga"
-        texto_prox = ((f"Licenças que vão vencer nos próximos {janela_r} dias" if tem_janela_r
-                       else "Licenças com vencimento próximo no painel") + " · da mais próxima para a mais distante")
-        secao_radar = f"""
-<section class="secao rolavel" id="radar" data-scroll aria-labelledby="t-radar">
-  <header class="secao-cabeca empilhada bloco-fixo">{titulo_secao("Licenças", "radar")}</header>
-  {faixa_grupo_lic("Vencidas", "", texto_venc)}
-  {grade_lic(grupos_venc, "vencida", f"Nenhuma licença venceu nos últimos {janela_r} dias.")}
-  {faixa_grupo_lic("Vencendo", "vencendo", texto_prox)}
-  {grade_lic(grupos_prox, "vencendo", "Nenhuma licença com vencimento próximo.")}
-</section>"""
+    # Cards por cliente + data. O id segue "radar" (menu e âncoras). A seção inteira
+    # mora em dashboard_base.secao_cards_licencas(): o diário usa a mesma, e as duas
+    # páginas não podem divergir.
+    secao_radar = secao_cards_licencas(licencas, "radar")
 
     # ============================================================= 4. MUDANÇAS
     if len(retratos) < 2:

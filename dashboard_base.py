@@ -2526,6 +2526,92 @@ def comparar_licencas(antes: dict, agora: dict) -> dict:
             "regua_ajustada": regua_ajustada}
 
 
+def agrupar_por_cliente_data(itens, mais_recente: bool) -> list[dict]:
+    """Uma entrada por cliente + data de vencimento, com os sistemas daquela data.
+
+    Vencidas: `mais_recente` -> maior `dias` primeiro (a que acabou de vencer).
+    Vencendo: menor `dias` primeiro. Sem data legível vai para o fim nas duas.
+    """
+    grupos: dict[tuple, dict] = {}
+    for i in (itens or []):
+        if not isinstance(i, dict):
+            continue
+        cliente = str(i.get("cliente") or "").strip() or "(cliente não informado)"
+        venc = str(i.get("vencimento") or "").strip()
+        g = grupos.setdefault((cliente, venc), {"cliente": cliente, "vencimento": venc,
+                                                "dias": i.get("dias"), "sistemas": []})
+        sistema = str(i.get("sistema") or "").strip() or "(sistema não informado)"
+        if sistema not in g["sistemas"]:
+            g["sistemas"].append(sistema)
+
+    def chave(g: dict):
+        d = g["dias"] if isinstance(g["dias"], int) else None
+        sem_data = d is None
+        ordem = 0 if sem_data else (-d if mais_recente else d)
+        return (sem_data, ordem, g["cliente"].casefold())
+    return sorted(grupos.values(), key=chave)
+
+
+def faixa_grupo_lic(rotulo: str, tom: str, texto: str) -> str:
+    """Faixa que abre um grupo de cards de licença: pílula colorida + explicação."""
+    return (f'<div class="faixa-grupo bloco-fixo"><span class="pilula-fonte lic-pilula {tom}">'
+            f'<span class="ponto" aria-hidden="true"></span>{esc(rotulo)}</span>'
+            f'<p class="faixa-grupo-texto">{esc(texto)}</p></div>')
+
+
+def grade_lic(grupos: list[dict], estado: str, vazio: str) -> str:
+    """Grade de cards (cliente, data, prazo e sistemas) de um grupo de licenças."""
+    if not grupos:
+        return f'<p class="lic-grupo-vazio bloco-fixo">{esc(vazio)}</p>'
+    cards = []
+    for g in grupos:
+        d = g["dias"] if isinstance(g["dias"], int) else None
+        dias = ""
+        if estado == "vencendo":
+            dias = ("sem data" if d is None else "Hoje" if d == 0 else f"Em {d} d")
+            dias = f'<span class="lic-item-dias">{esc(dias)}</span>'
+        chips = "".join(f'<span class="lic-chip">{esc(x)}</span>' for x in g["sistemas"])
+        cards.append(f"""
+<article class="lic-item {estado}">
+  <div class="lic-item-topo"><h3 class="lic-item-cliente">{esc(g["cliente"])}</h3>
+    <p class="lic-item-prazo">{esc(g["vencimento"] or "—")}{dias}</p></div>
+  <p class="lic-item-rotulo">Sistemas</p>
+  <div class="lic-item-sistemas">{chips}</div>
+</article>""")
+    return f'<div class="grade lic-grade bloco-elastico">{"".join(cards)}</div>'
+
+
+def secao_cards_licencas(licencas: dict | None, id_: str) -> str:
+    """Seção "Licenças" em cards (cliente + data), usada pelo diário e pelo briefing de licenças.
+
+    Design do Guilherme, 28/09/2026: vencidas da mais recente para a mais antiga,
+    vencendo da mais próxima para a mais distante. Uma função só para as duas
+    páginas -- "exatamente igual" é garantido por construção, não por cópia.
+    O `id_` muda porque cada menu aponta para a sua âncora ("licencas" / "radar").
+    """
+    if licencas is None:
+        return secao_vazia(id_, "Licenças", "Fonte de licenças indisponível nesta geração.")
+    vencidas = licencas.get("vencidas_recentes")
+    vencendo = licencas.get("vencendo_em_breve")
+    if not (isinstance(vencidas, list) and vencidas) and not (isinstance(vencendo, list) and vencendo):
+        return secao_vazia(id_, "Licenças", "Nenhuma licença vencida recentemente ou vencendo em breve.")
+    janela = janela_licencas(licencas)
+    tem_janela = bool(licencas.get("janela_dias"))
+    texto_venc = f"Licenças que venceram nos últimos {janela} dias · da vencida mais recente para a mais antiga"
+    texto_prox = ((f"Licenças que vão vencer nos próximos {janela} dias" if tem_janela
+                   else "Licenças com vencimento próximo no painel") + " · da mais próxima para a mais distante")
+    return f"""
+<section class="secao rolavel" id="{esc(id_)}" data-scroll aria-labelledby="t-{esc(id_)}">
+  <header class="secao-cabeca empilhada bloco-fixo">{titulo_secao("Licenças", id_)}</header>
+  {faixa_grupo_lic("Vencidas", "", texto_venc)}
+  {grade_lic(agrupar_por_cliente_data(vencidas, mais_recente=True), "vencida",
+             f"Nenhuma licença venceu nos últimos {janela} dias.")}
+  {faixa_grupo_lic("Vencendo", "vencendo", texto_prox)}
+  {grade_lic(agrupar_por_cliente_data(vencendo, mais_recente=False), "vencendo",
+             "Nenhuma licença com vencimento próximo.")}
+</section>"""
+
+
 def agrupar_licencas_por(itens: list, campo: str) -> dict[str, int]:
     """Contagem de licenças por sistema ou por cliente, em ordem decrescente."""
     if not isinstance(itens, list):

@@ -21,16 +21,16 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    AVISO_BASE_MUDOU, CHEVRON_SVG, janela_licencas, CSS, CSS_SINO, FONTES_INFO,
+    AVISO_BASE_MUDOU, CHEVRON_SVG, secao_cards_licencas, CSS, CSS_SINO, FONTES_INFO,
     JS_CHARTS, JS_HEADER_SINO, JS_UI,
     LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino, secao_agenda,
-    carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, classificar_licenca,
+    carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int,
     coletar_nomes_tecnicos, data_do_briefing, dividir_briefing, esc, explica,
     fmt_num, grafico, grupo_fonte, json_inline, label_dia, ler_historico, ler_json, logo_sino,
     markdown_para_html, menu_grade, nota_secao, num_html, ranking_semanal, redigir_nomes,
     render_ranking, secao_vazia, serie_historico, serie_tem_dado, seta_delta, status_fonte,
-    tabela_licencas, tabela_sistemas, tabela_tickets, tag_fonte, titulo_secao,
+    tabela_sistemas, tabela_tickets, tag_fonte, titulo_secao,
 )
 
 RELATORIO = RAIZ / "relatorio.md"
@@ -145,10 +145,8 @@ def gerar_html() -> str:
     aviso_base = "" if base_comparavel else f'<p class="secao-nota bloco-fixo">{AVISO_BASE_MUDOU}</p>'
 
     # --- licenças
-    lic_itens = tabela_licencas(licencas)
     n_vencendo = len((licencas or {}).get("vencendo_em_breve") or [])
     n_vencidas = len((licencas or {}).get("vencidas_recentes") or [])
-    vencidas_antigas = (licencas or {}).get("vencidas_antigas_total")
 
     fontes_desatualizadas = [f["rotulo"] for f in fontes.values() if f["estado"] == "desatualizada"]
     fontes_indisponiveis = [f["rotulo"] for f in fontes.values() if f["estado"] == "indisponivel"]
@@ -405,46 +403,9 @@ def gerar_html() -> str:
 </section>"""
 
     # ================================================================ 4. LICENÇAS
-    if licencas is None:
-        secao_licencas = secao_vazia("licencas", "Licenças", "Fonte indisponível: licenças.")
-    elif not lic_itens:
-        secao_licencas = secao_vazia("licencas", "Licenças", "Nenhuma licença vencida recentemente ou vencendo em breve.")
-    else:
-        linhas = []
-        for it in lic_itens:
-            cls, _ = classificar_licenca(it)
-            vencida = cls == "st-critico"
-            d = it["dias"]
-            if d is None:
-                prazo = "—"
-            elif d < 0:
-                prazo = f"há {abs(d)} d"
-            elif d == 0:
-                prazo = "hoje"
-            else:
-                prazo = f"em {d} d"
-            urgente = " urgente" if (not vencida and d is not None and d <= 7) else ""
-            linhas.append(
-                f'<tr><td><span class="pill {"vencida" if vencida else "vencendo"}">{"Vencida" if vencida else "Vencendo"}</span></td>'
-                f'<td>{esc(it["cliente"])}</td><td>{esc(it["sistema"])}</td>'
-                f'<td class="num">{esc(it["vencimento"])}</td><td class="num{urgente}">{prazo}</td></tr>'
-            )
-        sintese = ('<div class="lado">'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(n_vencidas)}</p><p class="kpi-legenda">vencidas recentes</p></div>'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(n_vencendo)}</p><p class="kpi-legenda">vencendo em breve</p></div>'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(vencidas_antigas)}</p><p class="kpi-legenda">vencidas há mais tempo, fora da lista</p></div>'
-                   '</div>')
-        secao_licencas = f"""
-<section class="secao rolavel" id="licencas" aria-labelledby="t-licencas">
-  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Licenças", "licencas")}{sintese}</header>
-  {nota_secao("licencas", "Painel web interno de licenças. Homologação e teste ficam de fora; "
-                          f"'vencidas recentes' são as dos últimos {janela_licencas(licencas)} dias, ainda acionáveis.")}
-  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
-    <table class="tabela-lic"><caption class="sr-only">Licenças vencidas recentemente e vencendo em breve, por urgência</caption>
-      <thead><tr><th scope="col">Status</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>
-      <tbody>{''.join(linhas)}</tbody></table>
-  </div>
-</section>"""
+    # Igual à seção "Licenças" do dashboard_licencas.html (decisão do Guilherme,
+    # 28/09/2026): a mesma função da base, com a âncora deste menu.
+    secao_licencas = secao_cards_licencas(licencas, "licencas")
 
     # ================================================================ 5. EVOLUÇÃO
     serie = serie_historico(historico, DIAS_GRAFICO)
