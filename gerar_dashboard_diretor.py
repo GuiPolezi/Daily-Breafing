@@ -26,7 +26,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    AVISO_BASE_MUDOU, CSS, CSS_SINO, JS_CHARTS, JS_HEADER_SINO, JS_UI,
+    AVISO_BASE_MUDOU, aviso_janela_mudou, janela_licencas_comparavel, CSS, CSS_SINO, JS_CHARTS, JS_HEADER_SINO, JS_UI,
     LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
@@ -205,7 +205,12 @@ def gerar_html() -> str:
         rodape="envelhecimento da fila" if idade else "",
         explicacao=explica("idade_90"), indice=4 + len(SISTEMAS_DESTAQUE)))
 
-    s_lic, b_lic = par(n_vencidas, "lic_vencidas_recentes", "menor", do_historico=True)
+    # período das listas mudou (ex.: 60 -> 30 dias)? a queda é da régua, não da operação
+    lic_comparavel = janela_licencas_comparavel(licencas, anterior)
+    # sem fonte hoje, o 0 não é medição: badge contra ontem seria uma queda inventada
+    s_lic, b_lic = (par(n_vencidas, "lic_vencidas_recentes", "menor", do_historico=True)
+                    if lic_comparavel and licencas is not None else ("", ""))
+    aviso_lic = "" if lic_comparavel else f'<p class="secao-nota bloco-fixo">{esc(aviso_janela_mudou(licencas))}</p>'
     card_licenca = card_sino(
         "Licenças Vencidas", n_vencidas, seta=s_lic, delta=b_lic,
         rodape=f"<b>{fmt_num(n_vencendo)}</b> vencendo em breve",
@@ -223,6 +228,7 @@ def gerar_html() -> str:
                rotulo="Mildesk")}
   <div class="grade painel-exec bloco-elastico">{''.join(cartoes)}</div>
   {grupo_fonte("licencas", "Licenças de produção, sem homologação e sem teste.", rotulo="Licenças")}
+  {aviso_lic}
   <div class="grade painel-exec bloco-elastico">{card_licenca}</div>
 </section>"""
 

@@ -122,8 +122,8 @@ ALTURA_CARD = {
     "graficos": 260,
     "painel-exec": 150,
     "duas-colunas-secao": 260,
-    "faixa-prazo": 110,
     "mov-grade": 200,
+    "panorama-lic": 170,
 }
 # Teto de colunas de uma grade (espelha o @media (min-width:1060px) de
 # dashboard_base.py). Sem isso o modelo acha que cabem 6 colunas numa tela larga,
@@ -131,6 +131,7 @@ ALTURA_CARD = {
 COLUNA_MAX = {
     "painel-exec": 4,     # @media (min-width:1060px) em dashboard_base.py
     "grade-fontes": 3,    # repeat(3,minmax(0,1fr)) -- colunas fixas, nao auto
+    "panorama-lic": 2,    # 1fr 2.05fr -- colunas fixas (Panorama de licencas)
 }
 COLUNA_MIN = {
     "grade": 240,
@@ -140,8 +141,8 @@ COLUNA_MIN = {
     "graficos": 320,
     "painel-exec": 230,
     "duas-colunas-secao": 300,
-    "faixa-prazo": 150,
     "mov-grade": 260,
+    "panorama-lic": 260,
 }
 GRADES = set(ALTURA_CARD)
 

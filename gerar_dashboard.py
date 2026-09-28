@@ -21,7 +21,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    AVISO_BASE_MUDOU, CHEVRON_SVG, CSS, CSS_SINO, FONTES_INFO,
+    AVISO_BASE_MUDOU, CHEVRON_SVG, janela_licencas, CSS, CSS_SINO, FONTES_INFO,
     JS_CHARTS, JS_HEADER_SINO, JS_UI,
     LIMITE_SISTEMAS, MOSTRAR_RANKING, RAIZ, badge_delta, barras_distribuicao,
     base_status_comparavel, card_grafico, card_sino, secao_agenda,
@@ -434,7 +434,7 @@ def gerar_html() -> str:
 <section class="secao rolavel" id="licencas" aria-labelledby="t-licencas">
   <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Licenças", "licencas")}{sintese}</header>
   {nota_secao("licencas", "Painel web interno de licenças. Homologação e teste ficam de fora; "
-                          "'vencidas recentes' são as dos últimos 60 dias, ainda acionáveis.")}
+                          f"'vencidas recentes' são as dos últimos {janela_licencas(licencas)} dias, ainda acionáveis.")}
   <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Tabela de licenças em risco">
     <table class="tabela-lic"><caption class="sr-only">Licenças vencidas recentemente e vencendo em breve, por urgência</caption>
       <thead><tr><th scope="col">Status</th><th scope="col">Cliente</th><th scope="col">Sistema</th><th scope="col" class="num">Vencimento</th><th scope="col" class="num">Prazo</th></tr></thead>

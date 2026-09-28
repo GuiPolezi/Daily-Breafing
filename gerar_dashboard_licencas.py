@@ -27,12 +27,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    CHEVRON_SVG, CSS, JS_CHARTS, JS_HEADER, JS_UI,
+    CHEVRON_SVG, CSS, CSS_SINO, JS_CHARTS, JS_HEADER, JS_UI,
     RAIZ, agrupar_licencas_por, badge_delta, barras_distribuicao, card_grafico,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
     comparar_licencas,
-    data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica, faixas_de_prazo,
-    fmt_num, logo_sino_licencas, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
+    data_do_briefing, dividir_briefing, esc,
+    aviso_janela_mudou, fmt_num, grupo_fonte, janela_licencas, janela_licencas_comparavel,
+    logo_sino_licencas, seta_delta, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
     ler_json, markdown_para_html, menu_licencas, nota_secao, num_html, redigir_nomes, secao_vazia,
     serie_historico,
     serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
@@ -104,6 +105,73 @@ def bloco_movimentacao(titulo: str, itens: list, classe: str, campo_extra: str =
 </article>"""
 
 
+def destaque_vencimento(itens: list, cabe, mais_recente: bool) -> dict | None:
+    """O vencimento em destaque: data mais recente (vencidas) ou mais próxima (vencendo).
+
+    Na data escolhida pode haver vários clientes -- é comum. Um vai em destaque (o
+    de mais sistemas afetados; empate, ordem alfabética) e os outros vão em `outros`,
+    para o card avisar em vez de esconder (decisão do Guilherme, 28/09/2026).
+    """
+    validos = [i for i in (itens or []) if isinstance(i, dict) and isinstance(i.get("dias"), int) and cabe(i["dias"])]
+    if not validos:
+        return None
+    alvo = (max if mais_recente else min)(i["dias"] for i in validos)
+    por_cliente: dict[str, list[str]] = {}
+    vencimento = ""
+    for i in validos:
+        if i["dias"] != alvo:
+            continue
+        vencimento = vencimento or str(i.get("vencimento") or "")
+        cliente = str(i.get("cliente") or "").strip() or "(cliente não informado)"
+        sistema = str(i.get("sistema") or "").strip() or "(sistema não informado)"
+        lista = por_cliente.setdefault(cliente, [])
+        if sistema not in lista:
+            lista.append(sistema)
+    ordem = sorted(por_cliente, key=lambda c: (-len(por_cliente[c]), c.casefold()))
+    return {"vencimento": vencimento, "cliente": ordem[0], "sistemas": por_cliente[ordem[0]],
+            "outros": ordem[1:]}
+
+
+def card_contagem(titulo: str, sub: str, valor: int, anterior_valor, tom: str) -> str:
+    """Card de contagem do Panorama: número grande, seta e badge contra o dia anterior."""
+    seta = seta_delta(valor, anterior_valor, melhor="menor")
+    badge = badge_delta(valor, anterior_valor, melhor="menor")
+    return f"""
+<article class="card lic-card {tom}">
+  <div class="lic-card-cabeca"><div><h3 class="lic-card-titulo">{esc(titulo)}</h3>
+    <p class="lic-card-sub">{esc(sub)}</p></div></div>
+  <p class="lic-kpi-num">{num_html(valor)}{seta}</p>
+  {f'<div class="lic-kpi-juizo">{badge}</div>' if badge else ""}
+</article>"""
+
+
+def card_vencimento(titulo: str, sub: str, destaque: dict | None, vazio: str, tom: str) -> str:
+    """Card do vencimento em destaque: data, cliente, sistemas e os outros clientes da data."""
+    if destaque is None:
+        corpo, data = f'<p class="lic-vazio">{esc(vazio)}</p>', ""
+    else:
+        LIMITE = 3  # sistemas listados; o resto vira "+N" (o painel tem altura fixa)
+        sist = destaque["sistemas"]
+        itens = "".join(f"<li>{esc(x)}</li>" for x in sist[:LIMITE])
+        if len(sist) > LIMITE:
+            itens += f"<li>+ {len(sist) - LIMITE} outro(s)</li>"
+        outros = destaque["outros"]
+        extra = (f'<p class="lic-venc-extra">+ {len(outros)} cliente(s) na mesma data: '
+                 f'{esc(", ".join(outros))}</p>') if outros else ""
+        corpo = f"""<div class="lic-venc-corpo">
+    <div><p class="lic-venc-rotulo">Cliente:</p><p class="lic-venc-cliente">{esc(destaque["cliente"])}</p></div>
+    <span class="lic-venc-divisor" aria-hidden="true"></span>
+    <div class="lic-venc-sistemas"><p class="lic-venc-rotulo">Sistemas Afetados</p><ul>{itens}</ul></div>
+  </div>{extra}"""
+        data = f'<p class="lic-card-data">{esc(destaque["vencimento"])}</p>'
+    return f"""
+<article class="card lic-card {tom}">
+  <div class="lic-card-cabeca"><div><h3 class="lic-card-titulo">{esc(titulo)}</h3>
+    <p class="lic-card-sub">{esc(sub)}</p></div>{data}</div>
+  {corpo}
+</article>"""
+
+
 def gerar_html() -> str:
     agora = datetime.now()
     licencas, erro = ler_json("licencas.json")
@@ -123,7 +191,6 @@ def gerar_html() -> str:
     itens = lista_itens(licencas)
     n_vencidas = len((licencas or {}).get("vencidas_recentes") or [])
     n_vencendo = len((licencas or {}).get("vencendo_em_breve") or [])
-    antigas = (licencas or {}).get("vencidas_antigas_total")
     ignoradas = (licencas or {}).get("ignoradas_homolog_teste")
 
     hoje_iso = date.today().isoformat()
@@ -133,46 +200,48 @@ def gerar_html() -> str:
             historico[-1] if historico[-1].get("data") != hoje_iso else {})
 
     # ============================================================= 1. PANORAMA
+    # Quatro cards (design do Guilherme, 28/09/2026): contagem à esquerda, o vencimento
+    # em destaque à direita. Linha de cima = o que já venceu; de baixo = o que vem aí.
     if licencas is None:
-        secao_destaques = secao_vazia("destaques", "Panorama", "Fonte de licenças indisponível nesta geração.")
+        secao_destaques = secao_vazia("destaques", "Panorama do Dia", "Fonte de licenças indisponível nesta geração.")
     else:
-        faixas = faixas_de_prazo(itens)
-        cartoes_faixa = []
-        for i, (rotulo, qtd) in enumerate(faixas.items()):
-            classe = " critica" if rotulo == "Vencidas" else (" urgente" if "até 7" in rotulo else "")
-            cartoes_faixa.append(f"""
-<article class="card kpi{classe}" style="--i:{i}">
-  <h3 class="kpi-rotulo">{esc(rotulo)}</h3>
-  <p class="kpi-numero">{num_html(qtd)}</p>
-</article>""")
+        janela = janela_licencas(licencas)
+        # coleta anterior a `janela_dias`: as vencidas eram de 60 dias e as vencendo
+        # não tinham corte -- o texto não pode prometer "próximos 60"
+        tem_janela = bool((licencas or {}).get("janela_dias"))
+        sub_vencendo = (f"Licenças que vencerão nos próximos {janela} dias" if tem_janela
+                        else "Licenças com vencimento próximo no painel")
+        texto_faixa = ("Licenças de produção, sem homologação e sem teste. " +
+                       (f"Vencidas nos últimos {janela} dias e vencendo nos próximos {janela}." if tem_janela
+                        else f"Vencidas nos últimos {janela} dias; vencendo, o que o painel listar."))
+        # período mudou desde ontem (ex.: 60 -> 30)? a variação é da régua: sem badge
+        lic_comparavel = janela_licencas_comparavel(licencas, anterior)
+        aviso_janela = ("" if lic_comparavel else
+                        f'<p class="secao-nota bloco-fixo">{esc(aviso_janela_mudou(licencas))}</p>')
+        vencidas = (licencas or {}).get("vencidas_recentes") or []
+        vencendo = (licencas or {}).get("vencendo_em_breve") or []
+        # o último que venceu = maior `dias` negativo; o próximo = menor `dias` >= 0
+        ultimo = destaque_vencimento(vencidas, lambda d: d < 0, mais_recente=True)
+        proximo = destaque_vencimento(vencendo, lambda d: d >= 0, mais_recente=False)
+        cards = [
+            card_contagem("Licenças Vencidas", f"Licenças que venceram nos últimos {janela} dias",
+                          n_vencidas, anterior.get("lic_vencidas_recentes") if lic_comparavel else None, "ouro"),
+            card_vencimento("Último Vencimento", "Cliente mais recente que teve a licença vencida",
+                            ultimo, f"Nenhuma licença venceu nos últimos {janela} dias.", "ouro"),
+            card_contagem("Licenças Vencendo em Breve", sub_vencendo,
+                          n_vencendo, anterior.get("lic_vencendo") if lic_comparavel else None, "gelo"),
+            card_vencimento("Próximo Vencimento", "Próximo cliente a ter sua licença vencida",
+                            proximo, "Nenhuma licença com vencimento próximo.", "gelo"),
+        ]
         secao_destaques = f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <div class="grade-destaques ampla bloco-elastico">
-    {titulo_secao("Licenças", "destaques", ["Licenças", "Em Risco"])}
-    <article class="card kpi kpi-primario" style="--i:0" aria-labelledby="c-venc">
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo" id="c-venc">Vencidas · ainda acionáveis</h3>{tag_fonte("licencas")}{etiqueta_fonte(fonte)}</div>
-      <div class="kpi-corpo"><div class="kpi-linha">
-        <p class="kpi-numero">{num_html(n_vencidas)}</p>
-        <div class="kpi-juizo">{badge_delta(n_vencidas, anterior.get("lic_vencidas_recentes"), melhor="menor")}</div>
-        <p class="kpi-secundario"><b>{num_html(n_vencendo)}</b> vencendo em breve</p>
-      </div></div>
-      {explica("lic_vencidas")}
-    </article>
-    <article class="card kpi" style="--i:1">
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Vencidas há mais tempo</h3>{tag_fonte("licencas")}</div>
-      <p class="kpi-numero">{num_html(antigas)}</p>
-      {explica("lic_antigas")}
-    </article>
-    <article class="card kpi" style="--i:2">
-      <div class="kpi-cabeca"><h3 class="kpi-rotulo">Homologação e teste</h3>{tag_fonte("licencas")}</div>
-      <p class="kpi-numero">{num_html(ignoradas)}</p>
-      <p class="kpi-explica"><b>O que é:</b> licenças de homologação, teste e backup, excluídas de todas as
-      contagens desta página por não representarem cliente em produção.</p>
-    </article>
-  </div>
-  {nota_secao("licencas", "Painel web interno de licenças, lido uma vez por dia. "
-                          "A fonte informa cliente, sistema e vencimento — não há valor nem contrato.")}
-  <div class="grade faixa-prazo bloco-fixo">{''.join(cartoes_faixa)}</div>
+  <header class="secao-cabeca empilhada bloco-fixo">
+    {titulo_secao("Panorama do Dia", "destaques")}
+    <p class="subtitulo">{esc(date.today().strftime("%d/%m/%Y"))}</p>
+  </header>
+  {grupo_fonte("licencas", texto_faixa, rotulo="Licença")}
+  {aviso_janela}
+  <div class="panorama-lic bloco-elastico">{''.join(cards)}</div>
 </section>"""
 
     # ============================================================= 2. RELATÓRIO
@@ -269,6 +338,9 @@ def gerar_html() -> str:
   </header>
   {nota_secao("licencas", "Comparação entre os dois retratos diários mais recentes. "
                           "Uma licença é identificada por cliente + sistema; o que muda é o vencimento.")}
+  {'<p class="secao-nota bloco-fixo">O período das listas mudou entre os dois retratos; o retrato anterior foi '
+   'refiltrado pela régua nova antes da comparação, então nada aparece como “saiu” só por causa da troca.</p>'
+   if mov["regua_ajustada"] else ""}
   <div class="grade mov-grade bloco-elastico">
     {bloco_movimentacao("Renovadas", mov["renovadas"], "", campo_extra="vencimento_anterior")}
     {bloco_movimentacao("Venceram no período", mov["venceram"], "")}
@@ -388,10 +460,10 @@ def gerar_html() -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SINO Licenças — {esc(data_dados)}</title>
-<style>{fontes_css}{CSS}</style>
+<style>{fontes_css}{CSS}{CSS_SINO}</style>
 {marcador_anim}
 </head>
-<body>
+<body class="pag-licencas">
 <a class="pular" href="#destaques">Ir para o conteúdo</a>
 <div class="palco">
 <header class="topo">

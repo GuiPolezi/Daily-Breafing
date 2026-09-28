@@ -114,6 +114,9 @@ def metricas_do_dia(helpdesk: dict, licencas: dict) -> dict:
         # Licenças
         "lic_vencendo": len(licencas.get("vencendo_em_breve") or []),
         "lic_vencidas_recentes": len(licencas.get("vencidas_recentes") or []),
+        # período das duas listas (dias). Linhas antigas não têm: eram 60 para as
+        # vencidas e sem corte para as vencendo. É o que denuncia o degrau da troca.
+        "lic_janela_dias": licencas.get("janela_dias"),
     }
 
 
@@ -141,6 +144,7 @@ def retrato_licencas(licencas: dict) -> dict | None:
     return {
         "data": date.today().isoformat(),
         "coletado_em": licencas.get("coletado_em"),
+        "janela_dias": licencas.get("janela_dias"),
         "total_vencendo": len(vencendo),
         "total_vencidas_recentes": len(vencidas),
         "vencidas_antigas_total": licencas.get("vencidas_antigas_total"),

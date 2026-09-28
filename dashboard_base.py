@@ -1219,7 +1219,6 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   .painel-exec{grid-template-columns:repeat(var(--colunas-max),minmax(0,1fr))}
 }
 .duas-colunas-secao{--card-min:300px}
-.faixa-prazo{--card-min:150px;margin-top:4px}
 .mov-grade{--card-min:260px}
 
 /* ---- vindo de CSS_DIRETOR ---- */
@@ -1230,10 +1229,6 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
 .leitura-exec li{margin-bottom:7px}
 
 /* ---- vindo do CSS proprio da pagina de licencas ---- */
-.faixa-prazo .card{padding:clamp(14px,1.5vw,22px)}
-.faixa-prazo .kpi-numero{font-size:var(--t-num-2)}
-.faixa-prazo .critica{background:var(--verm-bg)}
-.faixa-prazo .urgente{background:var(--ambar-bg)}
 .mov-lista{margin-top:10px;display:grid;gap:7px}
 .mov-item{display:flex;justify-content:space-between;gap:10px;font-size:var(--t-meta);
   padding-bottom:6px;border-bottom:1px solid var(--divisoria)}
@@ -1948,6 +1943,42 @@ AVISO_BASE_MUDOU = (
 )
 
 
+# Período das listas de licença antes de o coletor gravar `janela_dias`: 60 dias para
+# as vencidas (e as vencendo sem corte). Usado só para descrever coletas antigas.
+JANELA_LICENCAS_LEGADA = 60
+
+
+def janela_licencas(licencas: dict | None) -> int:
+    """Período (dias) das listas de licença desta coleta, para escrever nos textos."""
+    try:
+        return int((licencas or {}).get("janela_dias") or JANELA_LICENCAS_LEGADA)
+    except (TypeError, ValueError):
+        return JANELA_LICENCAS_LEGADA
+
+
+def janela_licencas_comparavel(licencas: dict | None, anterior: dict) -> bool:
+    """As listas de licença de hoje e as do dia anterior usam o mesmo período?
+
+    Mesmo raciocínio de base_status_comparavel(): quando LICENCAS_JANELA_DIAS muda --
+    e no dia em que o período caiu de 60 para 30 -- as contagens saltam sem que nada
+    tenha acontecido. Linha antiga do histórico não tem lic_janela_dias; se a coleta
+    de hoje tem, a ausência já prova que a régua mudou (e ambos ausentes = mesma régua).
+
+    Fonte indisponível (licencas None) NÃO é troca de régua: devolve True para não
+    inventar o aviso "o período passou a ser de N dias". Quem mostra o número decide,
+    à parte, que sem fonte não há comparação -- e a seção Fontes diz o motivo real.
+    """
+    if licencas is None:
+        return True
+    return (licencas or {}).get("janela_dias") == (anterior or {}).get("lic_janela_dias")
+
+
+def aviso_janela_mudou(licencas: dict | None) -> str:
+    return (f"A comparação de licenças com o dia anterior está suspensa: o período das listas "
+            f"passou a ser de {janela_licencas(licencas)} dias, então o número de hoje e o de "
+            f"ontem não saem da mesma régua. Os badges voltam na próxima coleta.")
+
+
 def etiqueta_fonte(estado: dict) -> str:
     """Etiqueta no canto do card quando a fonte está desatualizada ou indisponível (metadado, separado do delta)."""
     if estado["estado"] == "desatualizada":
@@ -2225,11 +2256,13 @@ METRICAS: dict[str, tuple[str, str, str]] = {
               "Campo group do chamado, como veio da origem. Cerca de um quinto da fila não tem "
               "esse campo preenchido — por isso o sistema é classificado pela categoria, não por aqui."),
     "lic_vencidas": ("licencas", "Licenças de produção vencidas há pouco tempo — ainda acionáveis.",
-                     "Tabela 'Vencidas' do painel, sem homologação/teste, limitada aos últimos 60 dias."),
+                     "Tabela 'Vencidas' do painel, sem homologação/teste, limitada aos últimos N dias "
+                     "(LICENCAS_JANELA_DIAS, padrão 30; até 28/09/2026 eram 60)."),
     "lic_vencendo": ("licencas", "Licenças de produção com vencimento próximo.",
-                     "Tabela 'Vencimento Próximo' do painel, sem homologação/teste."),
-    "lic_antigas": ("licencas", "Licenças vencidas há mais de 60 dias, fora da lista de ação.",
-                    "Contagem do que sobra da tabela 'Vencidas' além da janela de 60 dias."),
+                     "Tabela 'Vencimento Próximo' do painel, sem homologação/teste, limitada aos "
+                     "próximos N dias (LICENCAS_JANELA_DIAS, padrão 30)."),
+    "lic_antigas": ("licencas", "Licenças vencidas antes do período da lista, fora da lista de ação.",
+                    "Contagem do que sobra da tabela 'Vencidas' além dos N dias de LICENCAS_JANELA_DIAS."),
     "evolucao": ("historico", "Série diária das métricas já coletadas.",
                  "Uma linha por dia em historico/metricas.jsonl; dias sem coleta não aparecem."),
     "ranking": ("historico", "Atendimentos fechados por técnico, somados nos dias úteis registrados.",
@@ -2455,7 +2488,21 @@ def comparar_licencas(antes: dict, agora: dict) -> dict:
 
     'Renovada' = mesma licença com vencimento adiado. 'Saiu da lista' pode ser
     renovação para muito longe ou remoção no sistema -- o rótulo não afirma qual.
+
+    Se o período das listas mudou entre os dois retratos (ex.: 60 -> 30 dias), o
+    retrato antigo é refiltrado pela régua nova antes de comparar -- com os `dias`
+    DELE, do dia em que foi tirado. Sem isso, tudo o que só cabia na régua antiga
+    apareceria como "saiu da lista" sem ninguém ter mexido em nada.
     """
+    janela_agora = (agora or {}).get("janela_dias")
+    regua_ajustada = bool(janela_agora) and isinstance(antes, dict) and antes.get("janela_dias") != janela_agora
+    if regua_ajustada:
+        def cabe(i: dict) -> bool:
+            d = i.get("dias") if isinstance(i, dict) else None
+            if d is None:
+                return True
+            return d >= -janela_agora if i.get("estado") == "vencida" else d <= janela_agora
+        antes = {**antes, "itens": [i for i in (antes.get("itens") or []) if cabe(i)]}
     a, b = indexar_licencas(antes), indexar_licencas(agora)
     renovadas, venceram, entraram, sairam = [], [], [], []
 
@@ -2475,7 +2522,8 @@ def comparar_licencas(antes: dict, agora: dict) -> dict:
             sairam.append(velho)
 
     return {"renovadas": renovadas, "venceram": venceram, "entraram": entraram, "sairam": sairam,
-            "data_antes": (antes or {}).get("data"), "data_agora": (agora or {}).get("data")}
+            "data_antes": (antes or {}).get("data"), "data_agora": (agora or {}).get("data"),
+            "regua_ajustada": regua_ajustada}
 
 
 def agrupar_licencas_por(itens: list, campo: str) -> dict[str, int]:
@@ -2489,29 +2537,6 @@ def agrupar_licencas_por(itens: list, campo: str) -> dict[str, int]:
         valor = str(i.get(campo) or "").strip() or "(sem informação)"
         contagem[valor] = contagem.get(valor, 0) + 1
     return dict(sorted(contagem.items(), key=lambda kv: -kv[1]))
-
-
-def faixas_de_prazo(itens: list) -> dict[str, int]:
-    """Licenças agrupadas pela urgência do prazo -- a leitura do briefing de licenças."""
-    faixas = {"Vencidas": 0, "Vence em até 7 dias": 0, "Vence em 8 a 30 dias": 0,
-              "Vence em 31 a 60 dias": 0, "Mais de 60 dias": 0}
-    for i in itens or []:
-        if not isinstance(i, dict):
-            continue
-        d = i.get("dias")
-        if d is None:
-            continue
-        if d < 0:
-            faixas["Vencidas"] += 1
-        elif d <= 7:
-            faixas["Vence em até 7 dias"] += 1
-        elif d <= 30:
-            faixas["Vence em 8 a 30 dias"] += 1
-        elif d <= 60:
-            faixas["Vence em 31 a 60 dias"] += 1
-        else:
-            faixas["Mais de 60 dias"] += 1
-    return faixas
 
 
 def grafico(id_canvas: str, rotulo: str, dados: list, tipo: str = "area",
@@ -2805,6 +2830,70 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
 .slide-corpo em{color:var(--verde-sino)}
 .dist-preenche.aviso{background:var(--ouro)}
 
+/* ---- Panorama do briefing de licenças (painel 1:2 em duas linhas) --------
+   Esquerda: contagem (vencidas / vencendo); direita: o vencimento em destaque
+   (último que venceu / próximo a vencer) com cliente e sistemas. Linha de cima
+   em ouro (o que já venceu), de baixo em gelo (o que está por vir). A grade é um
+   bloco-elastico: as duas linhas dividem a altura que sobrar no painel.        */
+.panorama-lic{display:grid;gap:var(--gap);
+  grid-template-columns:minmax(0,1fr) minmax(0,2.05fr);grid-template-rows:repeat(2,minmax(0,1fr))}
+/* gap próprio: o .card da base traz 12px, que num card de ~150px come o corpo */
+.lic-card{display:flex;flex-direction:column;gap:clamp(2px,.5vh,8px);min-width:0;min-height:0;overflow:hidden;
+  border-radius:var(--r-card);padding:clamp(10px,1.6vh,24px) clamp(16px,1.9vw,30px);
+  box-shadow:var(--sombra-card);color:var(--carvao)}
+.lic-card.ouro{background:var(--ouro)}
+.lic-card.gelo{background:var(--gelo)}
+.lic-card-cabeca{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:0 0 auto}
+.lic-card-titulo{font:800 clamp(15px,min(2.3vh,1.45vw),24px)/1.15 var(--sans);letter-spacing:-.01em}
+.lic-card-sub{margin-top:1px;font:700 clamp(10px,1.3vh,12.5px)/1.25 var(--sans)}
+.lic-card.ouro .lic-card-sub{color:#7A5A00}
+.lic-card.gelo .lic-card-titulo{color:var(--verde-sino)}
+.lic-card.gelo .lic-card-sub{color:var(--verde-texto)}
+.lic-card-data{flex:0 0 auto;font:800 clamp(15px,min(2.3vh,1.45vw),24px)/1.15 var(--sans);letter-spacing:-.01em}
+.lic-card.gelo .lic-card-data{color:var(--verde-sino)}
+/* contagem */
+.lic-kpi-num{flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;gap:.08em;
+  font:800 clamp(34px,min(7.4vh,5.2vw),104px)/1 var(--sans);letter-spacing:-.03em}
+.lic-kpi-num .kpi-seta{align-self:flex-end;margin-bottom:.2em}
+.lic-kpi-juizo{flex:0 0 auto;display:flex;justify-content:center;min-height:0}
+.lic-kpi-juizo .badge{align-self:center;padding:2px 10px;font-size:10.5px}
+.lic-kpi-juizo .badge b{font-size:11.5px}
+/* vencimento em destaque: cliente | divisor | sistemas */
+.lic-venc-corpo{flex:1 1 auto;min-height:0;display:grid;align-items:center;
+  grid-template-columns:minmax(0,1.5fr) auto minmax(0,1fr);gap:clamp(12px,2.2vw,40px);
+  padding-top:clamp(2px,.8vh,14px);overflow:hidden}
+.lic-venc-rotulo{font:600 clamp(10px,1.3vh,12.5px)/1.25 var(--sans);margin-bottom:2px}
+.lic-card.ouro .lic-venc-rotulo{color:#7A5A00}
+.lic-card.gelo .lic-venc-rotulo{color:#7FB89C}
+.lic-venc-cliente{font:800 clamp(14px,min(2.3vh,2vw),36px)/1.08 var(--sans);letter-spacing:-.015em;
+  overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.lic-venc-divisor{position:relative;align-self:stretch;width:1px;margin:6px 0;background:currentColor;opacity:.28}
+.lic-venc-divisor::before,.lic-venc-divisor::after{content:"";position:absolute;left:-2px;width:5px;height:5px;
+  border-radius:50%;background:currentColor}
+.lic-venc-divisor::before{top:0}
+.lic-venc-divisor::after{bottom:0}
+.lic-venc-sistemas ul{list-style:disc;padding-left:1.15em;
+  font:500 clamp(12px,min(1.85vh,1.2vw),20px)/1.2 var(--sans)}
+.lic-venc-sistemas li::marker{font-size:.8em}
+.lic-venc-extra{flex:0 0 auto;margin-top:0;font:600 clamp(10px,1.25vh,12px)/1.3 var(--sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lic-card.ouro .lic-venc-extra{color:#7A5A00}
+.lic-card.gelo .lic-venc-extra{color:var(--verde-texto)}
+/* no briefing de licenças a pílula da fonte segue o design: verde, não âmbar como no diretor */
+.pag-licencas .pilula-fonte.licencas{color:var(--verde-sino)}
+.pag-licencas .pilula-fonte.licencas .ponto{background:var(--verde-sino)}
+.lic-vazio{flex:1 1 auto;display:flex;align-items:center;font:600 clamp(13px,1.8vh,16px)/1.4 var(--sans);opacity:.8}
+/* No palco o card tem altura DEFINIDA (a grade divide o painel), então o que cresce
+   com a tela é medido pela altura do card (cqh), não da janela: em 1600x900 o topo
+   não cai em degrau nenhum e o vh inflava a fonte além do card. Fora do palco (celular)
+   o card tem altura pelo conteúdo e container-type:size o achataria -- por isso só aqui. */
+@media (min-width:900px){
+  .lic-card{container-type:size}
+  .lic-kpi-num{font-size:clamp(30px,38cqh,110px)}
+  .lic-venc-cliente{font-size:clamp(14px,15cqh,36px)}
+  .lic-venc-sistemas ul{font-size:clamp(12px,8.5cqh,20px)}
+}
+
 /* ---- telas estreitas ---- */
 @media (max-width:899px){
   .sino-logo{width:54px;height:54px}
@@ -2819,6 +2908,10 @@ html:not(.gsap) .marca-sino:focus-visible .sino-sub-txt{opacity:1}
   .menu-sino{width:100%;grid-template-columns:repeat(3,minmax(0,1fr)) !important}
   .menu-sino .grid-item{min-width:0;min-height:38px}
   .faixa-grupo-texto{max-width:none}
+  .panorama-lic{grid-template-columns:1fr;grid-template-rows:none}
+  .lic-card{min-height:190px}
+  .lic-venc-corpo{grid-template-columns:1fr;gap:10px}
+  .lic-venc-divisor{display:none}
 }
 
 /* ---- impressao: nada escondido pela animacao ---- */

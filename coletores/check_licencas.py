@@ -24,7 +24,15 @@ BASE_URL = os.environ["LICENCAS_BASE_URL"]
 USUARIO = os.environ["LICENCAS_USUARIO"]
 SENHA = os.environ["LICENCAS_SENHA"]
 PAGINA_TABELAS = os.getenv("LICENCAS_PAGINA", "/")  # onde ficam as tabelas
-VENCIDA_RECENTE_DIAS = 60
+# Período (em dias) das duas listas de ação: vencidas nos últimos N dias e vencendo
+# nos próximos N. Era 60 fixo só para as vencidas, e as "vencendo" dependiam do que a
+# tabela do painel mostrasse; desde 28/09/2026 é 30 para os dois lados (decisão do
+# Guilherme). Mudou o valor? O dia da troca vira degrau no histórico -- os dashboards
+# detectam isso por `janela_dias` e suprimem a comparação.
+try:
+    JANELA_DIAS = max(1, int(os.getenv("LICENCAS_JANELA_DIAS", "30")))
+except ValueError:
+    JANELA_DIAS = 30
 IGNORAR = [
     p.strip().lower()
     for p in os.getenv("LICENCAS_IGNORAR", "homologação;homologacao;teste;backup").split(";")
@@ -116,16 +124,25 @@ def main() -> None:
     # Vencidas recentes = ainda acionáveis; antigas = só contagem
     vencidas_recentes = [
         l for l in vencidas_prod
-        if l["dias"] is not None and l["dias"] >= -VENCIDA_RECENTE_DIAS
+        if l["dias"] is not None and l["dias"] >= -JANELA_DIAS
     ]
+    # Vencendo = só os próximos JANELA_DIAS. Sem data legível fica na lista: melhor
+    # aparecer sem prazo do que sumir em silêncio. O que passa da janela vira contagem.
+    vencendo = [l for l in proximas_prod if l["dias"] is None or l["dias"] <= JANELA_DIAS]
+
+    def por_prazo(padrao: int):
+        # `dias or padrao` trataria 0 (vence hoje) como sem data; comparar com None não
+        return lambda l: l["dias"] if l["dias"] is not None else padrao
 
     resultado = {
         "fonte": "licencas (sistema interno)",
         "data": date.today().isoformat(),
         "coletado_em": datetime.now().isoformat(),
-        "vencendo_em_breve": sorted(proximas_prod, key=lambda l: l["dias"] or 999),
-        "vencidas_recentes": sorted(vencidas_recentes, key=lambda l: l["dias"] or 0),
+        "janela_dias": JANELA_DIAS,
+        "vencendo_em_breve": sorted(vencendo, key=por_prazo(999)),
+        "vencidas_recentes": sorted(vencidas_recentes, key=por_prazo(0)),
         "vencidas_antigas_total": len(vencidas_prod) - len(vencidas_recentes),
+        "vencendo_alem_da_janela": len(proximas_prod) - len(vencendo),
         "ignoradas_homolog_teste": len(proximas) + len(vencidas)
         - len(proximas_prod) - len(vencidas_prod),
     }
@@ -136,7 +153,8 @@ def main() -> None:
     )
     print(f"OK -> {SAIDA}")
     print(
-        f"Vencendo em breve: {len(proximas_prod)} | "
+        f"Janela: {JANELA_DIAS} dias | "
+        f"Vencendo em breve: {len(vencendo)} | "
         f"Vencidas recentes: {len(vencidas_recentes)} | "
         f"Antigas: {resultado['vencidas_antigas_total']}"
     )
