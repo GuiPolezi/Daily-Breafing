@@ -777,6 +777,17 @@ a{color:inherit}
 .wordmark .traco{position:absolute;left:0;top:53%;height:3px;width:var(--traco-w,100%);display:block;overflow:visible;fill:var(--traco);pointer-events:none}
 /* entrada animada (GSAP): html.anim esconde até o script assumir; sem JS ou sem GSAP a classe não existe */
 .anim .abelha,.anim .wordmark .w,.anim .favo-svg{opacity:0}
+/* marca SINO Licenças: losango + "SINO" / "LICENÇAS", sempre visíveis. Cores literais
+   da marca (não as variáveis do tema mel). .lic-logo é a caixa fixa que escuta o mouse;
+   quem pula no hover é o .lic-quique dentro dela -- assim o alvo nunca foge do cursor. */
+.marca-licencas{gap:clamp(12px,1.4vw,24px)}
+.lic-logo{position:relative;flex:0 0 auto;display:block;width:clamp(56px,11vh,120px);height:clamp(56px,11vh,120px)}
+.lic-quique{position:absolute;inset:0;display:block;will-change:transform}
+.lic-quique svg{width:100%;height:100%;display:block;overflow:visible;filter:drop-shadow(0 8px 16px rgba(9,81,47,.22))}
+.lic-texto{display:flex;flex-direction:column;justify-content:center;gap:.06em;color:#0C6E47;font-family:var(--sans)}
+.lic-nome{display:block;font-size:clamp(32px,min(6.4vh,3.6vw),66px);font-weight:800;line-height:.95;letter-spacing:-.01em}
+.lic-sub{display:block;font-size:clamp(14px,min(2.9vh,1.62vw),30px);font-weight:800;line-height:1.1;letter-spacing:.02em}
+.anim .lic-quique,.anim .lic-nome,.anim .lic-sub{opacity:0}
 .carimbo{flex:0 0 auto;margin:0 0 8px calc(var(--pad) - 2px);font-size:var(--t-meta);font-weight:700;color:var(--carimbo);letter-spacing:.01em;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .carimbo .sep{opacity:.55}
 .carimbo .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:2px 10px;border-radius:999px;text-decoration:none}
@@ -1011,6 +1022,9 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   .abelha{height:52px}
   .wordmark{font-size:22px}
   .wordmark .traco{height:2px}
+  .lic-logo{width:48px;height:48px}
+  .lic-nome{font-size:28px}
+  .lic-sub{font-size:12.5px}
   .favo{height:auto;flex:1 0 100%;justify-content:flex-start}
   .favo-svg{display:none !important}
   .menu-simples{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;width:100%}
@@ -1055,7 +1069,7 @@ html.gsap .slide.ativo{opacity:1;visibility:visible}
   body{overflow:visible;background:#fff}
   .palco{display:block;height:auto}
   .topo{height:auto}
-  .abelha,.wordmark .w,.wordmark .traco{opacity:1 !important;transform:none !important}
+  .abelha,.wordmark .w,.wordmark .traco,.lic-quique,.lic-nome,.lic-sub{opacity:1 !important;transform:none !important}
   .favo,.slider-controles,.acoes{display:none}
   .colmeia{overflow:visible;background:none}
   .secao{position:static;opacity:1;visibility:visible;transform:none;overflow:visible;break-inside:avoid;background:var(--mel);border-radius:24px;margin-bottom:12px}
@@ -1581,7 +1595,12 @@ JS_HEADER = """
     var asaE = doc.querySelector(".abelha .asa-e"), asaD = doc.querySelector(".abelha .asa-d");
     var wordmark = doc.querySelector(".wordmark"), marca = doc.querySelector(".marca");
     var palavras = doc.querySelectorAll(".wordmark .w"), tracos = doc.querySelectorAll(".wordmark .traco");
-    if (!abelha || !voo || !wordmark || !palavras.length) { soltar(); return; }
+    // duas marcas possíveis: abelha + letreiro (semanal) ou losango SINO (licenças).
+    // A ausência de uma não pode derrubar o favo nem o parallax.
+    var temAbelha = !!(abelha && voo && wordmark && palavras.length);
+    var licLogo = doc.querySelector(".lic-logo"), licQuique = doc.querySelector(".lic-quique");
+    var licTexto = doc.querySelectorAll(".lic-nome, .lic-sub");
+    var temLosango = !!(licLogo && licQuique);
     // o CSS volta ao estado final agora; os "from" abaixo aplicam o estado inicial no mesmo quadro (sem piscar)
     soltar();
 
@@ -1596,14 +1615,35 @@ JS_HEADER = """
     }
 
     var tl = g.timeline({ defaults: { ease: "expo.out" } });
-    // abelha: chega da esquerda em arco, assenta e bate as asas
-    tl.from(voo, { x: -140, y: 60, rotation: -22, scale: .85, opacity: 0, duration: 1.15, ease: "power3.out", svgOrigin: "50 52" }, 0)
-      .add(function(){ bater(5); }, .4)
-      // letreiro: cada palavra sobe e assenta; o tachado desenha da esquerda para a direita
-      .from(palavras, { yPercent: 55, opacity: 0, letterSpacing: ".08em", duration: .9, stagger: .14 }, .45)
-      .from(tracos, { scaleX: 0, transformOrigin: "0 50%", duration: .55, stagger: .14, ease: "power2.inOut" }, .95)
-      // repouso: flutuação lenta e contínua
-      .add(function(){ g.to(voo, { y: "+=4", duration: 2.6, yoyo: true, repeat: -1, ease: "sine.inOut" }); });
+    if (temAbelha) {
+      // abelha: chega da esquerda em arco, assenta e bate as asas
+      tl.from(voo, { x: -140, y: 60, rotation: -22, scale: .85, opacity: 0, duration: 1.15, ease: "power3.out", svgOrigin: "50 52" }, 0)
+        .add(function(){ bater(5); }, .4)
+        // letreiro: cada palavra sobe e assenta; o tachado desenha da esquerda para a direita
+        .from(palavras, { yPercent: 55, opacity: 0, letterSpacing: ".08em", duration: .9, stagger: .14 }, .45)
+        .from(tracos, { scaleX: 0, transformOrigin: "0 50%", duration: .55, stagger: .14, ease: "power2.inOut" }, .95)
+        // repouso: flutuação lenta e contínua
+        .add(function(){ g.to(voo, { y: "+=4", duration: 2.6, yoyo: true, repeat: -1, ease: "sine.inOut" }); });
+    }
+
+    // losango SINO: cai de cima e quica até assentar; o texto desliza em seguida
+    // não reinicia no meio de um quique nem durante a queda de entrada
+    function quicar(){
+      if (!temLosango || g.isTweening(licQuique)) return;
+      var alto = licLogo.getBoundingClientRect().height * .2;
+      // achata no chão, estica ao subir, cai quicando e assenta com um respiro elástico
+      g.timeline({ defaults: { transformOrigin: "50% 100%" } })
+        .to(licQuique, { scaleX: 1.1, scaleY: .88, duration: .12, ease: "power2.out" })
+        .to(licQuique, { y: -alto, scaleX: .95, scaleY: 1.07, duration: .26, ease: "power2.out" })
+        .to(licQuique, { y: 0, duration: .62, ease: "bounce.out" })
+        .to(licQuique, { scaleX: 1, scaleY: 1, duration: .3, ease: "power2.out" }, "<")
+        .to(licQuique, { scaleX: 1.05, scaleY: .95, duration: .09, ease: "power1.out" }, "-=.08")
+        .to(licQuique, { scaleX: 1, scaleY: 1, duration: .45, ease: "elastic.out(1, .5)" });
+    }
+    if (temLosango) {
+      tl.from(licQuique, { y: -70, opacity: 0, duration: 1.05, ease: "bounce.out" }, 0)
+        .from(licTexto, { x: -18, opacity: 0, duration: .8, stagger: .12, ease: "power3.out" }, .35);
+    }
 
     // favo de mel: anima só a variante visível agora (a outra está em display:none)
     var favo = Array.prototype.filter.call(doc.querySelectorAll(".favo-svg"), function(s){ return s.getBoundingClientRect().width > 0; })[0];
@@ -1660,14 +1700,26 @@ JS_HEADER = """
     });
 
     var fino = !!(win.matchMedia && win.matchMedia("(hover: hover) and (pointer: fine)").matches);
-    if (marca && fino) marca.addEventListener("pointerenter", function(){ bater(4); });
+    if (marca && fino && temAbelha) marca.addEventListener("pointerenter", function(){ bater(4); });
+    // quique do losango: mouse sobre a caixa fixa do logo, ou foco de teclado na marca
+    if (temLosango) {
+      licLogo.addEventListener("pointerenter", quicar);
+      if (marca) marca.addEventListener("focus", function(){
+        var teclado = true;
+        try { teclado = marca.matches(":focus-visible"); } catch (e) {}
+        if (teclado) quicar();
+      });
+    }
 
     // parallax do mouse: só em modo palco e com ponteiro fino; touch e telas estreitas ficam parados
     if (fino) {
       var mq = win.matchMedia("(min-width: 900px)");
       var opc = { duration: .7, ease: "power3.out" };
-      var ax = g.quickTo(abelha, "x", opc), ay = g.quickTo(abelha, "y", opc);
-      var wx = g.quickTo(wordmark, "x", opc), wy = g.quickTo(wordmark, "y", opc);
+      var nada = function(){};
+      var ax = temAbelha ? g.quickTo(abelha, "x", opc) : nada, ay = temAbelha ? g.quickTo(abelha, "y", opc) : nada;
+      // o letreiro (ou a marca SINO inteira) anda menos que a abelha
+      var alvoW = temAbelha ? wordmark : (temLosango ? marca : null);
+      var wx = alvoW ? g.quickTo(alvoW, "x", opc) : nada, wy = alvoW ? g.quickTo(alvoW, "y", opc) : nada;
       var fx = g.quickTo(".favo-svg", "x", opc), fy = g.quickTo(".favo-svg", "y", opc);  // favo em outra profundidade
       var mover = function(nx, ny){ ax(nx * 9); ay(ny * 7); wx(nx * 4); wy(ny * 3); fx(nx * -5); fy(ny * -4); };
       win.addEventListener("pointermove", function(e){
@@ -2473,6 +2525,18 @@ def logo_sino(alvo: str = "destaques", titulo: str = "SINO Gestão", sub: str = 
     <span class="sino-sub"><span class="sino-sub-txt">{esc(sub)}</span></span>
   </span>
 </a>"""
+
+
+def logo_sino_licencas(alvo: str = "destaques") -> str:
+    """Marca do briefing de licenças: losango SINO + "SINO" / "LICENÇAS", sempre visíveis.
+
+    Usa o CSS base (a página de licenças não carrega CSS_SINO). O hover é um quique
+    feito pelo JS_HEADER no .lic-quique; a caixa .lic-logo não se move.
+    """
+    return f"""<a class="marca marca-licencas" href="#{esc(alvo)}" data-alvo="{esc(alvo)}" aria-label="SINO Licenças — início">
+    <span class="lic-logo"><span class="lic-quique">{LOSANGO_SVG}</span></span>
+    <h1 class="lic-texto"><span class="lic-nome">SINO</span><span class="lic-sub">LICENÇAS</span></h1>
+  </a>"""
 
 
 def menu_grade(ordem: list[tuple[str, str]], colunas: int = 3) -> str:

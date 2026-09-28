@@ -27,12 +27,12 @@ from datetime import date, datetime
 from pathlib import Path
 
 from dashboard_base import (
-    ABELHA_SVG, CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI,
-    RAIZ, TRACO_SVG, agrupar_licencas_por, badge_delta, barras_distribuicao, card_grafico,
+    CHEVRON_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI,
+    RAIZ, agrupar_licencas_por, badge_delta, barras_distribuicao, card_grafico,
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int, coletar_nomes_tecnicos,
     comparar_licencas,
     data_do_briefing, dividir_briefing, esc, etiqueta_fonte, explica, faixas_de_prazo,
-    favo_svg, fmt_num, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
+    favo_svg, fmt_num, logo_sino_licencas, grafico, json_inline, label_dia, ler_historico, ler_historico_licencas,
     ler_json, markdown_para_html, nota_secao, num_html, redigir_nomes, secao_vazia,
     serie_historico,
     serie_tem_dado, status_fonte, tag_fonte, titulo_secao,
@@ -388,7 +388,7 @@ def gerar_html() -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Briefing Licenças — {esc(data_dados)}</title>
+<title>SINO Licenças — {esc(data_dados)}</title>
 <style>{fontes_css}{CSS}</style>
 {marcador_anim}
 </head>
@@ -396,10 +396,7 @@ def gerar_html() -> str:
 <a class="pular" href="#destaques">Ir para o conteúdo</a>
 <div class="palco">
 <header class="topo">
-  <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Licenças — início">
-    {ABELHA_SVG}
-    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing{TRACO_SVG}</span><span class="w">Licenças{TRACO_SVG}</span></h1>
-  </a>
+  {logo_sino_licencas()}
   <nav class="favo" aria-label="Seções do painel">
     {favo_cheio}
     {favo_compacto}
