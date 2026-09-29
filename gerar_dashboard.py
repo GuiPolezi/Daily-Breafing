@@ -28,7 +28,7 @@ from dashboard_base import (
     carregar_chart_js, carregar_fontes_css, carregar_gsap, cfg_int,
     coletar_nomes_tecnicos, data_do_briefing, dividir_briefing, esc, explica,
     fmt_num, grafico, grupo_fonte, json_inline, label_dia, ler_historico, ler_json, logo_sino,
-    markdown_para_html, menu_grade, nota_secao, num_html, ranking_semanal, redigir_nomes,
+    markdown_para_html, menu_grade, nota_secao, num_html, ranking_semanal, JANELA_RANKING_DIAS, redigir_nomes,
     render_ranking, secao_vazia, serie_historico, serie_tem_dado, seta_delta, status_fonte,
     tabela_sistemas, tabela_tickets, tag_fonte, titulo_secao,
 )
@@ -519,7 +519,7 @@ def gerar_html() -> str:
   <header class="secao-cabeca dividida bloco-fixo">
     {titulo_secao("Suporte", "eficacia")}
     <div class="lado"><div class="kpi-medida"><p class="kpi-numero menor">{num_html(rank["total_periodo"])}</p>
-      <p class="kpi-legenda">atendimentos fechados em {len(rank["dias"])} dia(s) útil(eis)</p></div></div>
+      <p class="kpi-legenda">atendimentos fechados nos últimos {JANELA_RANKING_DIAS} dias · {len(rank["dias"])} dia(s) útil(eis) registrado(s)</p></div></div>
   </header>
   {nota_secao("milldesk", "Produtividade do suporte e estado da fila em aberto.")}
   <article class="card card-ranking bloco-elastico" data-scroll>

@@ -461,14 +461,38 @@ def serie_tem_dado(serie: dict, chave: str) -> bool:
     return any(v is not None for v in serie.get(chave) or [])
 
 
-def ranking_semanal(historico: list[dict]) -> dict:
-    """Soma atend_por_tecnico dos últimos 5 dias úteis registrados (sem duplicar dia de referência)."""
+# Janela do ranking de atendimentos (Suporte, diário e diretor): dias corridos
+# contados a partir de hoje. Até 29/09/2026 eram os 5 últimos dias úteis.
+JANELA_RANKING_DIAS = 30
+
+
+def dia_referencia_atend(r: dict) -> date | None:
+    """Data do dia de trabalho do registro: atend_dia_ref ('09/09/2026 (qua)') ou, na falta, data."""
+    m = re.match(r"\s*(\d{2})/(\d{2})/(\d{4})", str(r.get("atend_dia_ref") or ""))
+    try:
+        if m:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        return date.fromisoformat(str(r.get("data"))[:10])
+    except ValueError:
+        return None
+
+
+def ranking_semanal(historico: list[dict], dias: int = JANELA_RANKING_DIAS) -> dict:
+    """Soma atend_por_tecnico dos dias úteis registrados nos últimos `dias` dias corridos.
+
+    O nome ficou do tempo em que eram 5 dias úteis. Dia de referência repetido
+    conta uma vez (vale o registro mais recente).
+    """
+    corte = date.today() - timedelta(days=dias)
     por_ref: dict[str, dict] = {}
     for r in historico:
         if isinstance(r.get("atend_por_tecnico"), dict) or r.get("atend_total") is not None:
+            dia_ref = dia_referencia_atend(r)
+            if dia_ref is None or dia_ref < corte:
+                continue
             chave = str(r.get("atend_dia_ref") or r["data"])
             por_ref[chave] = r  # mantém o registro mais recente de cada dia de referência
-    ultimos = list(por_ref.values())[-5:]
+    ultimos = list(por_ref.values())
     soma: dict[str, int] = {}
     totais_dia = []
     for r in ultimos:
@@ -2265,8 +2289,10 @@ METRICAS: dict[str, tuple[str, str, str]] = {
                     "Contagem do que sobra da tabela 'Vencidas' além dos N dias de LICENCAS_JANELA_DIAS."),
     "evolucao": ("historico", "Série diária das métricas já coletadas.",
                  "Uma linha por dia em historico/metricas.jsonl; dias sem coleta não aparecem."),
-    "ranking": ("historico", "Atendimentos fechados por técnico, somados nos dias úteis registrados.",
-                "Soma de atend_por_tecnico do histórico; dias que repetem o mesmo dia de referência contam uma vez."),
+    "ranking": ("historico", "Atendimentos fechados por técnico, somados nos últimos 30 dias.",
+                "Soma de atend_por_tecnico dos dias úteis registrados no histórico cujo dia de referência "
+                "caiu nos últimos 30 dias corridos; dias que repetem o mesmo dia de referência contam uma vez. "
+                "Dia em que o briefing não rodou não entra na soma."),
     "tickets_tecnico": ("milldesk", "Quantidade de chamados atribuídos ao técnico, contada na coleta desta "
                                     "manhã, em qualquer status menos Fechado.",
                         "Campo abertos de por_agente: chamados cujo técnico contém o nome configurado em "
