@@ -3358,7 +3358,9 @@ CSS_SEMANAL = """
   padding-bottom:clamp(14px,2.6vh,30px)}
 .sem-slider{position:relative;min-height:0;display:flex;flex-direction:column}
 .sem-slides{position:relative;flex:1 1 auto;min-height:0;overflow:hidden}
-.sem-slide{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;visibility:hidden;
+/* overflow-x hidden: na troca o miolo desliza meia distância DENTRO do slide e, com
+   overflow:auto, aparecia uma barra de rolagem horizontal durante a animação */
+.sem-slide{position:absolute;inset:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;visibility:hidden;
   scrollbar-width:thin;scrollbar-color:rgba(9,81,47,.35) transparent;outline:none}
 .sem-slide.ativo{visibility:visible}
 .sem-slide-miolo{padding:calc(var(--sem-u) * 1.4) 2px calc(var(--sem-u) * 1)}
@@ -3608,8 +3610,12 @@ JS_SEMANAL_SOBRE = """
     var g = G();
     posMarca(atual, false);
     if (!g || !palco()) return;
-    g.fromTo(temas, { x: 40, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: "power3.out", stagger: .06, clearProps: "transform,opacity" });
-    if (marca) g.fromTo(marca, { opacity: 0 }, { opacity: 1, duration: .5, delay: .15, clearProps: "opacity" });
+    // Anima a COLUNA (que isola as camadas) e só os TEXTOS dos temas -- nunca opacidade ou
+    // transform nos botões: isso cria um contexto de empilhamento em cada botão e a marca
+    // verde (z-index 1) passava por cima do texto do tema ativo durante a entrada.
+    if (coluna) g.fromTo(coluna, { x: 40, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: "power3.out", clearProps: "transform,opacity" });
+    g.fromTo(lista(secao, ".sem-tema span"), { x: 14, opacity: 0 },
+             { x: 0, opacity: 1, duration: .5, ease: "power3.out", stagger: .05, delay: .12, clearProps: "transform,opacity" });
     g.from(itensDe(slides[atual]), { y: 16, opacity: 0, duration: .6, ease: "power3.out", stagger: .06, delay: .2, clearProps: "transform,opacity" });
   }
 
