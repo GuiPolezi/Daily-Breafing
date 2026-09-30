@@ -835,6 +835,10 @@ def bloco_desenvolvimento(todos: list[dict]) -> dict:
                 "acima_de_90_dias": sum(1 for t in lista if (dias_aberto(t) or 0) > 90),
                 "mais_antigo_dias": max(
                     (dias_aberto(t) or 0 for t in lista), default=None),
+                # Retrato de QUAIS chamados estao com o dev (so ids, ~3 KB no total).
+                # A API nao tem historico de atribuicao: arquivar.py compara este
+                # retrato com o do dia anterior, e chamado que entrou = atribuido.
+                "ids_abertos": sorted({str(t.get("id")) for t in lista if t.get("id") not in (None, "")}),
             }
             for nome, lista in por_dev.items()
         },

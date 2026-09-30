@@ -8,6 +8,11 @@ licenças (cliente + sistema + vencimento), que é o que permite responder
 "o que renovou, o que caiu e o que entrou novo" comparando dois dias. O
 coletor de licenças já baixa tudo isso — aqui só guardamos a série.
 
+E escreve historico/atribuicoes.jsonl: um retrato diário de QUAIS chamados
+estão com cada dev (só ids). O Milldesk não tem histórico de atribuição; o
+chamado que aparece com o dev e não estava com ele no retrato anterior conta
+como atribuído (dev_atribuidos_novos em metricas.jsonl).
+
 Campos novos nunca podem quebrar a leitura das linhas antigas: quem lê usa
 .get(), nunca indexação direta.
 """
@@ -21,6 +26,11 @@ DADOS = RAIZ / "dados"
 HISTORICO = RAIZ / "historico"
 ARQUIVO = HISTORICO / "metricas.jsonl"
 ARQUIVO_LICENCAS = HISTORICO / "licencas.jsonl"
+ARQUIVO_ATRIBUICOES = HISTORICO / "atribuicoes.jsonl"
+# Retrato anterior mais velho que isto não serve de base: depois de uma pausa na
+# coleta, tudo o que entrou no intervalo cairia num dia só e inflaria a semana.
+# 5 dias cobre fim de semana e feriado prolongado (sexta -> quarta).
+ATRIBUICOES_BASE_MAX_DIAS = 5
 
 
 def ler(nome: str) -> dict:
@@ -120,6 +130,9 @@ def metricas_do_dia(helpdesk: dict, licencas: dict) -> dict:
                                 else None),
         # Dias cobertos pela contagem acima (segunda = sexta..domingo). Auditoria.
         "criados_periodo": dic(dic(atend.get("chamados_criados")).get("periodo")) or None,
+        # "Fila de Chamados" do semanal: chamados abertos por clientes no período
+        # (sem internos e sem atendimento diário) e a quebra por sistema.
+        **criados_do_dia(dic(atend.get("chamados_criados"))),
         # Licenças
         "lic_vencendo": len(licencas.get("vencendo_em_breve") or []),
         "lic_vencidas_recentes": len(licencas.get("vencidas_recentes") or []),
@@ -127,6 +140,97 @@ def metricas_do_dia(helpdesk: dict, licencas: dict) -> dict:
         # vencidas e sem corte para as vencendo. É o que denuncia o degrau da troca.
         "lic_janela_dias": licencas.get("janela_dias"),
     }
+
+
+def criados_do_dia(criados: dict) -> dict:
+    """criados_total e criados_por_sistema; None nos dois quando a coleta não trouxe o bloco."""
+    por_cliente = criados.get("por_cliente")
+    if not isinstance(por_cliente, dict):
+        return {"criados_total": None, "criados_por_sistema": None}
+    por_sistema: dict[str, int] = {}
+    for bloco in por_cliente.values():
+        for sistema, qtd in dic(dic(bloco).get("por_sistema")).items():
+            if isinstance(qtd, int) and not isinstance(qtd, bool):
+                por_sistema[sistema] = por_sistema.get(sistema, 0) + qtd
+    total = criados.get("total")
+    if not isinstance(total, int) or isinstance(total, bool):
+        return {"criados_total": None, "criados_por_sistema": None}  # dado inválido = ausente, nos dois
+    return {
+        "criados_total": total,
+        "criados_por_sistema": dict(sorted(por_sistema.items(), key=lambda kv: -kv[1])),
+    }
+
+
+def ids_por_dev(helpdesk: dict) -> dict[str, list[str]] | None:
+    """{dev: [ids em aberto]} da coleta de hoje; None se o coletor não trouxe (versão antiga)."""
+    por_dev = dic(dic(helpdesk.get("desenvolvimento")).get("por_dev"))
+    ids = {nome: bloco["ids_abertos"] for nome, bloco in por_dev.items()
+           if isinstance(bloco, dict) and isinstance(bloco.get("ids_abertos"), list)}
+    return ids or None
+
+
+def retrato_anterior(arquivo: Path, hoje: str) -> dict | None:
+    """Último retrato com data ANTERIOR a hoje (rodar duas vezes no dia não compara consigo mesmo)."""
+    if not arquivo.exists():
+        return None
+    melhor = None
+    for linha in arquivo.read_text(encoding="utf-8").splitlines():
+        try:
+            r = json.loads(linha)
+        except json.JSONDecodeError:
+            continue
+        data = r.get("data") if isinstance(r, dict) else None
+        if isinstance(data, str) and data < hoje and isinstance(r.get("ids_por_dev"), dict):
+            if melhor is None or data > melhor["data"]:
+                melhor = r
+    return melhor
+
+
+def regua_status(helpdesk: dict) -> int | None:
+    """Quantos status entraram na fila hoje (o mesmo marcador de fila_status_qtd)."""
+    return len(helpdesk.get("status_consultados") or []) or None
+
+
+def motivo_sem_base(anterior: dict | None, hoje_iso: str, regua_hoje: int | None) -> str | None:
+    """Por que o retrato anterior NÃO serve para medir atribuição (None = serve).
+
+    Diferença de retratos só mede atribuição se os dois retratos saíram da mesma
+    régua e estão perto um do outro. Senão o "novo" é degrau falso, igual ao da fila
+    em 17/09/2026: status novo no Milldesk (ou HELPDESK_STATUS_EXCLUIDOS editado) faz
+    chamados aparecerem no nome do dev sem ninguém ter atribuído nada.
+    """
+    if not anterior or not isinstance(anterior.get("ids_por_dev"), dict):
+        return "primeiro retrato (linha de base)"
+    if anterior.get("regua_status") != regua_hoje:
+        return "a régua de status mudou desde o retrato anterior"
+    try:
+        dias = (date.fromisoformat(hoje_iso) - date.fromisoformat(str(anterior.get("data")))).days
+    except ValueError:
+        return "data do retrato anterior ilegível"
+    if dias > ATRIBUICOES_BASE_MAX_DIAS:
+        return f"retrato anterior tem {dias} dias (máximo {ATRIBUICOES_BASE_MAX_DIAS})"
+    return None
+
+
+def atribuicoes_novas(hoje: dict[str, list[str]], anterior: dict | None,
+                      hoje_iso: str | None = None, regua_hoje: int | None = None) -> dict:
+    """Chamados que entraram na carga de cada dev desde o retrato anterior.
+
+    Sem base válida (primeiro dia, régua de status diferente, retrato velho demais),
+    tudo vira None e o motivo vai em dev_atribuidos_aviso: melhor "sem dado" do que um
+    número inflado. Dev que não existia no retrato anterior (acabou de entrar na
+    config) também fica None -- senão a carga inteira dele pareceria atribuída num dia.
+    """
+    motivo = motivo_sem_base(anterior, hoje_iso or date.today().isoformat(), regua_hoje)
+    if motivo:
+        return {"dev_atribuidos_novos": {nome: None for nome in hoje},
+                "dev_atribuidos_desde": None, "dev_atribuidos_aviso": motivo}
+    base = anterior["ids_por_dev"]
+    novos = {}
+    for nome, ids in hoje.items():
+        antes = base.get(nome)
+        novos[nome] = None if not isinstance(antes, list) else len(set(map(str, ids)) - set(map(str, antes)))
+    return {"dev_atribuidos_novos": novos, "dev_atribuidos_desde": anterior.get("data")}
 
 
 def retrato_licencas(licencas: dict) -> dict | None:
@@ -167,6 +271,11 @@ def main() -> None:
     licencas = ler("licencas.json")
 
     metricas = metricas_do_dia(helpdesk, licencas)
+    ids_hoje = ids_por_dev(helpdesk)
+    if ids_hoje is not None:
+        metricas = {**metricas, **atribuicoes_novas(
+            ids_hoje, retrato_anterior(ARQUIVO_ATRIBUICOES, metricas["data"]),
+            metricas["data"], regua_status(helpdesk))}
     total = gravar_linha_do_dia(ARQUIVO, metricas)
     print(f"OK -> {ARQUIVO} ({total} dias registrados)")
 
@@ -176,6 +285,18 @@ def main() -> None:
     else:
         total_lic = gravar_linha_do_dia(ARQUIVO_LICENCAS, retrato)
         print(f"OK -> {ARQUIVO_LICENCAS} ({total_lic} dias, {len(retrato['itens'])} licenças hoje)")
+
+    if ids_hoje is None:
+        print(f"AVISO: coleta sem ids por dev; {ARQUIVO_ATRIBUICOES.name} não foi atualizado")
+    else:
+        dias = gravar_linha_do_dia(ARQUIVO_ATRIBUICOES, {
+            "data": metricas["data"],
+            "coletado_em": helpdesk.get("coletado_em"),
+            # régua do retrato: se mudar até o próximo, aquela diferença não é atribuição
+            "regua_status": regua_status(helpdesk),
+            "ids_por_dev": ids_hoje,
+        })
+        print(f"OK -> {ARQUIVO_ATRIBUICOES} ({dias} dias)")
 
 
 if __name__ == "__main__":

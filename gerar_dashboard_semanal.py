@@ -135,22 +135,8 @@ def resumo_semana(regs: list[dict]) -> dict:
         vals = [(r, v) for r, v in vals if v is not None]
         if not vals:
             return None
-        # "véspera" = registro imediatamente anterior ao último (com o campo preenchido)
-        vespera = vals[-2] if len(vals) > 1 else None
         return {"ini": vals[0][1], "ini_data": vals[0][0]["data"],
-                "fim": vals[-1][1], "fim_data": vals[-1][0]["data"], "n": len(vals),
-                "vespera": vespera[1] if vespera else None,
-                "vespera_data": vespera[0]["data"] if vespera else None}
-
-    # Carga por dev: o retrato do último registro da semana que tem o campo.
-    carga_dev, carga_data = None, None
-    for r in reversed(regs):
-        dp = r.get("dev_por_pessoa")
-        if isinstance(dp, dict) and dp:
-            carga_dev = [(str(n), inteiro(v)) for n, v in dp.items()]
-            carga_dev.sort(key=lambda kv: (-(kv[1] if kv[1] is not None else -1), kv[0]))
-            carga_data = r["data"]
-            break
+                "fim": vals[-1][1], "fim_data": vals[-1][0]["data"], "n": len(vals)}
 
     return {
         "registros": regs,
@@ -163,12 +149,10 @@ def resumo_semana(regs: list[dict]) -> dict:
         "atend_dias": [(str(r.get("atend_dia_ref") or label_dia(r["data"])), v) for r, v in atend],
         "por_tecnico": sorted(por_tecnico.items(), key=lambda kv: kv[1], reverse=True),
         "fila": extremos("fila_abertos"),
-        # quantos status entraram na fila em cada dia: mais de um valor = a régua mudou na semana
-        "fila_regua_ok": len({r.get("fila_status_qtd") for r in regs if inteiro(r.get("fila_abertos")) is not None}) <= 1,
+        "criados": criados_da_semana(regs),
+        "carga": carga_da_semana(regs),
         "lic_vencidas": extremos("lic_vencidas_recentes"),
         "lic_vencendo": extremos("lic_vencendo"),
-        "carga_dev": carga_dev,
-        "carga_data": carga_data,
         "clientes": clientes_da_semana(regs),
     }
 
@@ -177,6 +161,72 @@ def chave_cliente(nome) -> str:
     """Mesma regra do coletor (chave_local): sem acento, sem caixa, espaços colapsados."""
     texto = unicodedata.normalize("NFD", str(nome))
     return " ".join("".join(c for c in texto if unicodedata.category(c) != "Mn").lower().split())
+
+
+def linhas_por_referencia(regs: list[dict], tem_dado) -> tuple[dict[str, dict], set[str]]:
+    """Uma linha por dia de referência (atend_dia_ref; sem ele, a data): vale a MAIS RECENTE
+    QUE TEM o dado. Se o briefing rodou no sábado (ok) e de novo na segunda com a coleta
+    falhando (None), o sábado não pode ser descartado. Devolve ({ref: linha}, todas as refs)."""
+    por_ref: dict[str, dict] = {}
+    refs: set[str] = set()
+    for r in regs:
+        ref = str(r.get("atend_dia_ref") or "").strip() or f"data:{r['data']}"
+        refs.add(ref)
+        if tem_dado(r):
+            por_ref[ref] = r
+    return por_ref, refs
+
+
+def maior(contagem: dict[str, int]) -> tuple[str, int] | None:
+    """Chave com o maior valor; empate decide pela ordem alfabética (estável entre gerações)."""
+    return min(contagem.items(), key=lambda kv: (-kv[1], kv[0])) if contagem else None
+
+
+def criados_da_semana(regs: list[dict]) -> dict:
+    """"Fila de Chamados": chamados abertos por CLIENTES na semana (sem internos e sem
+    atendimento diário -- o coletor já tira os dois). Soma criados_total por dia de
+    referência; a segunda-feira traz sexta..domingo (criados_periodo)."""
+    por_ref, refs = linhas_por_referencia(regs, lambda r: inteiro(r.get("criados_total")) is not None)
+    total = sum(inteiro(r["criados_total"]) for r in por_ref.values())
+    por_sistema: dict[str, int] = {}
+    for r in por_ref.values():
+        ps = r.get("criados_por_sistema")
+        for sis, q in (ps if isinstance(ps, dict) else {}).items():
+            v = inteiro(q)
+            if v is not None:
+                por_sistema[str(sis)] = por_sistema.get(str(sis), 0) + v
+    dias = len(por_ref)
+    topo = maior(por_sistema)
+    return {"total": total if dias else None, "dias": dias, "possiveis": len(refs),
+            "media": total / dias if dias else None,
+            "sistema": topo[0] if topo else None, "sistema_qtd": topo[1] if topo else None}
+
+
+def carga_da_semana(regs: list[dict]) -> dict:
+    """"Carga por Dev": chamados que ENTRARAM na carga de cada dev na semana. Cada linha do
+    histórico traz dev_atribuidos_novos = diferença entre o retrato de ids do dia e o
+    anterior (arquivar.py), então somar as linhas não conta nada duas vezes. Dev sem nenhum
+    dia com número fica None (sem base), não zero. Todo dev configurado aparece, mesmo com 0."""
+    soma: dict[str, int] = {}
+    nomes: set[str] = set()
+    dias = 0
+    for r in regs:
+        novos = r.get("dev_atribuidos_novos")
+        if isinstance(r.get("dev_por_pessoa"), dict):
+            nomes.update(str(n) for n in r["dev_por_pessoa"])
+        if not isinstance(novos, dict):
+            continue
+        nomes.update(str(n) for n in novos)
+        contou = False
+        for nome, v in novos.items():
+            q = inteiro(v)
+            if q is not None:
+                soma[str(nome)] = soma.get(str(nome), 0) + q
+                contou = True
+        dias += contou
+    pares = [(n, soma.get(n)) for n in nomes]
+    pares.sort(key=lambda kv: (-(kv[1] if kv[1] is not None else -1), kv[0]))
+    return {"devs": pares, "dias": dias, "possiveis": len(regs)}
 
 
 def clientes_da_semana(regs: list[dict]) -> dict:
@@ -188,19 +238,11 @@ def clientes_da_semana(regs: list[dict]) -> dict:
     total: dict[str, int] = {}
     sistemas: dict[str, dict[str, int]] = {}
     grafias: dict[str, dict[str, int]] = {}
-    # Um dia de referência conta uma vez, e vale a coleta MAIS RECENTE QUE TEM o dado: se o
-    # briefing rodou no sábado (ok) e de novo na segunda com o período falhando (None), o
-    # sábado não pode ser descartado. (O _conta_atend dos atendimentos não serve aqui.)
-    por_ref: dict[str, dict] = {}
-    refs: set[str] = set()
-    for r in regs:
-        ref = str(r.get("atend_dia_ref") or "").strip() or f"data:{r['data']}"
-        refs.add(ref)
-        if isinstance(r.get("criados_por_cliente"), dict):
-            por_ref[ref] = r["criados_por_cliente"]
+    # Dia de referência repetido conta uma vez (ver linhas_por_referencia).
+    por_ref, refs = linhas_por_referencia(regs, lambda r: isinstance(r.get("criados_por_cliente"), dict))
     dias = len(por_ref)
-    for pc in por_ref.values():
-        for cliente, bloco in pc.items():
+    for linha in por_ref.values():
+        for cliente, bloco in linha["criados_por_cliente"].items():
             if not isinstance(bloco, dict):
                 continue
             q = inteiro(bloco.get("total"))
@@ -281,26 +323,30 @@ def bloco_atendimentos(atual: dict, anterior: dict, comparavel: bool) -> str:
             f'<div class="sem-kpi">{kpi}{tecnicos}</div></div>')
 
 
-def bloco_fila(atual: dict) -> str:
-    fila = atual["fila"]
-    if not fila:
-        kpi = (f'<p class="sem-num">{SEM_DADO}</p>'
-               '<div class="sem-lado"><p class="sem-nota">Sem fila registrada na semana.</p></div>')
-    elif fila["n"] == 1:
-        kpi = (f'<p class="sem-num">{num_html(fila["fim"])}</p><div class="sem-lado">'
-               f'<p class="sem-nota">um único registro na semana · {esc(label_dia(fila["fim_data"]))}</p></div>')
+def bloco_fila(atual: dict, anterior: dict) -> str:
+    """Chamados CRIADOS por clientes na semana -- não o estoque em aberto (esse segue no
+    gráfico da Evolução)."""
+    c, a = atual["criados"], anterior["criados"]
+    if c["total"] is None:
+        kpi = (f'<p class="sem-num">{SEM_DADO}</p><div class="sem-lado"><p class="sem-nota">'
+               'Sem contagem de chamados criados nos dias desta semana (campo criados_total ausente no histórico).'
+               '</p></div>')
     else:
-        linhas = f'<p class="sem-linha-fila"><b>{fmt_num(fila["ini"])}</b> em {esc(label_dia(fila["ini_data"]))}</p>'
-        if fila["n"] > 2:  # com só 2 registros a véspera é o próprio início
-            linhas += (f'<p class="sem-linha-fila"><b>{fmt_num(fila["vespera"])}</b> '
-                       f'em {esc(label_dia(fila["vespera_data"]))}</p>')
-        badge = badge_delta(fila["fim"], fila["ini"], "vs. início da semana", melhor="menor")
-        if not atual["fila_regua_ok"]:  # degrau falso: o conjunto de status consultados mudou
-            badge = '<p class="sem-nota">comparação suspensa: a régua de status mudou nesta semana</p>'
-        kpi = (f'<p class="sem-num" title="fila em {esc(label_dia(fila["fim_data"]))}">{num_html(fila["fim"])}</p>'
-               f'<div class="sem-lado">{badge}{linhas}</div>')
-    return (f'<div class="sem-bloco sem-esq sem-anima" style="--i:1"><h3 class="sem-rotulo">Fila de Chamados</h3>'
-            f'<div class="sem-kpi">{kpi}</div></div>')
+        # Só compara semana completa com semana completa: com dias faltando a diferença seria falsa.
+        comparavel = (a["dias"] >= MIN_DIAS_ANTERIOR and a["dias"] == a["possiveis"]
+                      and c["dias"] == c["possiveis"])
+        badge = badge_delta(c["total"], a["total"], "vs. semana anterior", melhor="menor") if comparavel else ""
+        linhas = ('<p class="sem-linha-fila" title="média por dia útil de referência (a segunda inclui o fim de semana)">'
+                  f'<b>{fmt_dec(c["media"])}</b> por dia</p>')
+        if c["sistema"]:
+            linhas += ('<p class="sem-linha-fila" title="sistema com mais chamados criados na semana">'
+                       f'<b>{fmt_num(c["sistema_qtd"])}</b> em {esc(c["sistema"])}</p>')
+        if c["dias"] < c["possiveis"]:
+            linhas += f'<p class="sem-nota">contagem em {c["dias"]} de {c["possiveis"]} dia(s) da semana</p>'
+        kpi = f'<p class="sem-num">{num_html(c["total"])}</p><div class="sem-lado">{badge}{linhas}</div>'
+    return ('<div class="sem-bloco sem-esq sem-anima" style="--i:1" '
+            'title="chamados abertos por clientes na semana (sem internos e sem atendimento diário)">'
+            f'<h3 class="sem-rotulo">Fila de Chamados</h3><div class="sem-kpi">{kpi}</div></div>')
 
 
 def bloco_cliente(atual: dict) -> str:
@@ -325,16 +371,22 @@ def bloco_cliente(atual: dict) -> str:
 
 
 def bloco_carga(atual: dict) -> str:
-    carga = atual["carga_dev"]
-    if not carga:
-        return ('<div class="sem-carga sem-anima" style="--i:3">' + rotulo_com_seta("Carga por Dev")
-                + '<p class="sem-nota">Sem carga por dev registrada na semana.</p></div>')
-    quando = label_dia(atual["carga_data"])
-    return ('<div class="sem-carga sem-anima" style="--i:3">'
-            + rotulo_com_seta("Carga por Dev", f"chamados em aberto atribuídos a cada dev em {quando}")
-            + lista_pessoas(carga, f"Chamados em aberto por dev em {quando}", classe="sem-devs", curto=True,
+    """Chamados que foram atribuídos a cada dev na semana (entraram na carga dele)."""
+    carga = atual["carga"]
+    rotulo = rotulo_com_seta("Carga por Dev", "chamados atribuídos a cada dev nesta semana")
+    if not carga["devs"]:
+        return ('<div class="sem-carga sem-anima" style="--i:3">' + rotulo
+                + '<p class="sem-nota">Sem devs registrados na semana.</p></div>')
+    nota = ""
+    if carga["dias"] == 0:
+        nota = ('<p class="sem-nota">Sem atribuições contadas ainda: a conta começa no segundo dia de '
+                'coleta com o retrato de chamados por dev (o primeiro é só a linha de base).</p>')
+    elif carga["dias"] < carga["possiveis"]:
+        nota = f'<p class="sem-nota">atribuições contadas em {carga["dias"]} de {carga["possiveis"]} dia(s) da semana</p>'
+    return ('<div class="sem-carga sem-anima" style="--i:3">' + rotulo
+            + lista_pessoas(carga["devs"], "Chamados atribuídos por dev na semana", classe="sem-devs", curto=True,
                             anonimo="" if MOSTRAR_RANKING else "DEV")
-            + '</div>')
+            + nota + '</div>')
 
 
 def secao_destaques_semana(atual: dict, anterior: dict, comparavel: bool) -> str:
@@ -343,7 +395,7 @@ def secao_destaques_semana(atual: dict, anterior: dict, comparavel: bool) -> str
   <header class="sem-cabeca bloco-fixo">{titulo_secao("Destaques da Semana", "destaques")}</header>
   <div class="sem-corpo bloco-elastico">
     <div class="sem-linha">{bloco_atendimentos(atual, anterior, comparavel)}</div>
-    <div class="sem-linha">{bloco_fila(atual)}{bloco_cliente(atual)}</div>
+    <div class="sem-linha">{bloco_fila(atual, anterior)}{bloco_cliente(atual)}</div>
     {bloco_carga(atual)}
   </div>
 </section>"""
