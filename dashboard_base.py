@@ -3256,13 +3256,13 @@ CSS_SEMANAL = """
 .sem-rodape .sep{opacity:.6}
 .sem-rodape .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:1px 10px;border-radius:999px;text-decoration:none}
 .sem-rodape .aviso.grave{background:var(--verm-bg);color:var(--verm-ink)}
-/* Marca d'água de PONTA A PONTA da tela (atravessa a margem lateral do palco) e SEM
-   distorção: a altura sai da proporção do viewBox, recortado na tinta das letras.
-   Sem teto de altura de propósito -- um teto faria ela encolher e deixar de ocupar a
-   largura toda. Sombra em duas camadas: uma curta que assenta a letra e uma longa e
-   difusa que dá profundidade sobre o verde. */
-.sem-marca{flex:0 0 auto;display:block;width:calc(100% + var(--sem-palco-x) * 2);height:auto;
-  margin:clamp(4px,1.4vh,16px) calc(var(--sem-palco-x) * -1) 0;overflow:visible;pointer-events:none;
+/* Marca d'água na largura toda do palco -- alinhada às bordas da folha, com a mesma
+   margem lateral pequena (--sem-palco-x) -- e SEM distorção: a altura sai da proporção
+   do viewBox, recortado na tinta das letras. Sem teto de altura de propósito: um teto
+   faria ela encolher e deixar de ocupar a largura. Sombra em duas camadas: uma curta
+   que assenta a letra e uma longa e difusa que dá profundidade sobre o verde. */
+.sem-marca{flex:0 0 auto;display:block;width:100%;height:auto;
+  margin-top:clamp(4px,1.4vh,16px);overflow:visible;pointer-events:none;
   filter:drop-shadow(0 2px 1.5px rgba(2,32,17,.38)) drop-shadow(0 12px 22px rgba(1,26,13,.5))}
 .sem-marca text{font-family:"Inter",var(--sem-num);font-weight:900}
 
