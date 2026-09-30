@@ -111,6 +111,15 @@ def metricas_do_dia(helpdesk: dict, licencas: dict) -> dict:
         "atend_dia_ref": atend.get("dia"),
         "atend_total": atend.get("total_atendimentos_fechados"),
         "atend_por_tecnico": atend.get("por_tecnico"),
+        # Chamados abertos por cliente (location) no mesmo dia de referência, com a
+        # quebra por sistema: {cliente: {total, por_sistema}}. Linhas antes de
+        # 30/09/2026 não têm; o semanal soma só os dias que têm. {} = dia coletado
+        # sem nenhum chamado de cliente; None = dado ausente (não é zero).
+        "criados_por_cliente": (dic(atend.get("chamados_criados")).get("por_cliente")
+                                if isinstance(dic(atend.get("chamados_criados")).get("por_cliente"), dict)
+                                else None),
+        # Dias cobertos pela contagem acima (segunda = sexta..domingo). Auditoria.
+        "criados_periodo": dic(dic(atend.get("chamados_criados")).get("periodo")) or None,
         # Licenças
         "lic_vencendo": len(licencas.get("vencendo_em_breve") or []),
         "lic_vencidas_recentes": len(licencas.get("vencidas_recentes") or []),

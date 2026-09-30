@@ -267,6 +267,14 @@ TICKETS_SISTEMAS = [
 # descarta os menos urgentes -- nunca os que importam.
 TICKETS_LIMITE = int(os.getenv("HELPDESK_TICKETS_LIMITE", "25") or 25)
 
+# Locais (campo `location` do Milldesk = o cliente) que sao a propria empresa.
+# Ficam fora da conta de "chamados criados por cliente": "Sino" teve 445 de 912
+# chamados em 30 dias na sondagem de 23/09/2026 e ganharia de todo cliente.
+# Separados por ";", comparacao exata sem acento e sem caixa.
+LOCAIS_INTERNOS = [
+    s.strip() for s in os.getenv("HELPDESK_LOCAIS_INTERNOS", "Sino").split(";") if s.strip()
+]
+
 
 def ultimo_dia_util(referencia: date | None = None) -> date:
     """Dia útil anterior: seg -> sex; ter-sáb -> dia anterior; dom -> sex."""
@@ -433,6 +441,9 @@ def atendimentos_do_dia(dia: date) -> dict:
                 "nomes_sem_mapa": sorted(nomes_sem_mapa),
             },
         },
+        # Chamados abertos por cliente do dia util ate ontem (segunda: sexta a domingo).
+        # Atendimento diario fica fora: quem registra e o tecnico, nao o cliente.
+        "chamados_criados": chamados_criados_do_periodo(dia, tickets, formato_usado),
     }
     if aviso_status:
         resultado["aviso"] = aviso_status
@@ -494,6 +505,110 @@ def sistema_do_ticket(ticket: dict) -> str:
             if any(tr in subcategoria for tr in trechos):
                 return rotulo
     return ROTULO_OUTROS
+
+
+def chave_local(texto) -> str:
+    """Forma de comparacao de um local/cliente: sem acento, sem caixa, espacos colapsados."""
+    return " ".join(normalizar(str(texto or "")).split())
+
+
+def data_abertura(ticket: dict) -> date | None:
+    """Data do `start`. Alem dos formatos de parse_data, aceita ISO com 'T'/'Z'
+    (so aqui, para nao mudar o parse compartilhado da fila)."""
+    dt = parse_data(ticket.get("start"))
+    if dt is not None:
+        return dt.date()
+    texto = str(ticket.get("start") or "").strip().replace("Z", "+00:00")
+    # com fuso (ex.: "Z" = UTC) converte para o horario local: 02:00Z ainda e o dia anterior em BRT.
+    # Data absurda (ano 0001/9999 com fuso) faz astimezone() lancar: vira None (sem_data), nunca
+    # derruba a coleta.
+    try:
+        dt = datetime.fromisoformat(texto) if texto else None
+        return None if dt is None else (dt.astimezone() if dt.tzinfo else dt).date()
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def eh_atendimento_diario(ticket: dict) -> bool:
+    """Registro de atendimento diario (os dois modos): quem abre e o tecnico, nao o cliente."""
+    return normalizar(SOLICITANTE_ATENDIMENTO) in normalizar(ticket.get("requester", "")) \
+        or tem_tag_atendimento(ticket)
+
+
+def chamados_criados_do_periodo(dia: date, tickets_do_dia: list[dict], formato: str) -> dict:
+    """Chamados de cliente abertos de `dia` (ultimo dia util) ate ONTEM.
+
+    Na segunda o periodo e sexta..domingo: sem isso o que o cliente abre no fim
+    de semana nunca entraria na conta. As coletas diarias encadeiam sem buraco e
+    sem sobreposicao (seg: sex-dom; ter: seg; ...). Periodo de um dia reaproveita
+    a resposta ja baixada; periodo maior faz UMA chamada de leitura ao mesmo
+    endpoint. Se ela falhar, degrada para o dia util e avisa -- nunca derruba a coleta.
+    """
+    fim = max(dia, date.today() - timedelta(days=1))
+    tickets, aviso = tickets_do_dia, None
+    if fim > dia:
+        try:
+            resposta = chamar("showTicketsPerPeriod",
+                              {"start": dia.strftime(formato), "end": fim.strftime(formato)})
+            tickets = resposta if isinstance(resposta, list) else []
+        except Exception as e:  # rede, erro no corpo: fica so o dia util
+            fim, aviso = dia, f"periodo {dia:%d/%m}-{fim:%d/%m} indisponivel ({e}); contado so {dia:%d/%m}"
+    de_cliente = [t for t in tickets if not eh_atendimento_diario(t)]
+    resultado = chamados_criados_por_cliente(de_cliente, dia, fim)
+    resultado["periodo"] = {"inicio": dia.isoformat(), "fim": fim.isoformat(), "dias": (fim - dia).days + 1}
+    if aviso:
+        resultado["aviso"] = aviso
+    return resultado
+
+
+def chamados_criados_por_cliente(tickets: list[dict], inicio: date, fim: date | None = None) -> dict:
+    """Chamados abertos entre `inicio` e `fim` (inclusive; fim=None -> um dia) por
+    cliente (campo `location`) e, dentro de cada cliente, por sistema (mesma
+    regra de sistema_do_ticket).
+
+    Nao se sabe se showTicketsPerPeriod filtra pela data de abertura; por isso o
+    `start` do proprio chamado tambem precisa cair no periodo. Sem `start` legivel o
+    chamado conta (confia-se no filtro do endpoint) e entra em `sem_data`.
+    """
+    fim = fim or inicio
+    internos = {chave_local(s) for s in LOCAIS_INTERNOS}
+    por_cliente: dict[str, dict] = {}
+    fora_do_dia = internos_excluidos = sem_local = sem_data = 0
+    for t in tickets:
+        aberto = data_abertura(t)
+        if aberto is None:
+            sem_data += 1
+        elif not inicio <= aberto <= fim:
+            fora_do_dia += 1
+            continue
+        cliente = str(t.get("location") or "").strip()
+        if not cliente:
+            sem_local += 1
+            continue
+        if chave_local(cliente) in internos:
+            internos_excluidos += 1
+            continue
+        # campo livre: "Cliente X" e "cliente  x " sao o mesmo cliente. Agrupa pela
+        # forma normalizada e exibe a primeira grafia vista.
+        chave = chave_local(cliente)
+        bloco = por_cliente.setdefault(chave, {"nome": " ".join(cliente.split()), "total": 0, "por_sistema": {}})
+        bloco["total"] += 1
+        sistema = sistema_do_ticket(t)
+        bloco["por_sistema"][sistema] = bloco["por_sistema"].get(sistema, 0) + 1
+    ordenado = {
+        b["nome"]: {"total": b["total"],
+                    "por_sistema": dict(sorted(b["por_sistema"].items(), key=lambda kv: -kv[1]))}
+        for b in sorted(por_cliente.values(), key=lambda b: -b["total"])
+    }
+    return {
+        "total": sum(b["total"] for b in ordenado.values()),
+        "por_cliente": ordenado,
+        "internos_excluidos": internos_excluidos,
+        "locais_internos": LOCAIS_INTERNOS,
+        "sem_local": sem_local,
+        "fora_do_dia": fora_do_dia,
+        "sem_data": sem_data,
+    }
 
 
 # Natureza do trabalho, lida da subcategoria. Na fila real "Bug / Erro" (119) e

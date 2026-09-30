@@ -219,18 +219,19 @@ sistema de origem — a fonte não diz qual, e a página não afirma.
 `briefing_semanal.bat` não roda coletores: o Claude lê só `historico/metricas.jsonl`
 e escreve `relatorio_semanal.md`. Em seguida:
 
-1. `gerar_dashboard_semanal.py` gera `dashboard_semanal.html`, com o mesmo visual,
-   a mesma navegação e o mesmo comportamento offline do dashboard diário (importa
-   CSS, JS e o favo de `dashboard_base.py`). Seções: Destaques da semana,
-   Relatório (tópicos do `relatorio_semanal.md` em slider), Evolução (gráficos dos
-   últimos 12 dias), Eficácia (ranking da semana), Semanas (atual contra a
-   anterior) e Dia a dia (tabela dos registros).
+1. `gerar_dashboard_semanal.py` gera `dashboard_semanal.html` no tema "Relatório
+   Semanal" (`CSS_SEMANAL` em `dashboard_base.py`: fundo verde, folha clara com o
+   menu no canto, marca d'água), com a mesma navegação e o mesmo comportamento
+   offline do dashboard diário. Seções: Destaques da Semana (atendimentos, por
+   técnico, fila, carga por dev e cliente que mais criou chamado), Sobre a Semana
+   (tópicos do `relatorio_semanal.md` em slider), Evolução (gráficos dos últimos
+   12 dias) e Eficácia (ranking da semana).
    - Os números são calculados do histórico com as mesmas regras do prompt:
      últimos 12 dias corridos; semana atual = 5 registros mais recentes; linhas
      com o mesmo `atend_dia_ref` contam uma vez só; comparação com a semana
      anterior só com pelo menos 3 dias registrados nela.
    - Se o `relatorio_semanal.md` for mais antigo que o último registro do
-     histórico (por exemplo, o `claude -p` falhou), o topo mostra "relatório
+     histórico (por exemplo, o `claude -p` falhou), o rodapé mostra "relatório
      desatualizado". Sem histórico ou sem relatório, a seção correspondente avisa
      e o restante é gerado.
    - `DASHBOARD_MOSTRAR_RANKING=false` também esconde os nomes aqui, inclusive no

@@ -1,10 +1,16 @@
 """Gera dashboard_semanal.html: painel estático e autocontido do briefing semanal.
 
 Lê historico/metricas.jsonl e relatorio_semanal.md (não lê dados/ nem chama
-nenhuma API) e escreve um único HTML com o mesmo visual "favo de mel" do
-dashboard diário. CSS, JS, favo, abelha, conversor de markdown e helpers são
-importados de dashboard_base.py: mudou o design lá, muda aqui também. Nunca
-lança exceção por dado ausente: cada seção degrada e o restante é gerado.
+nenhuma API) e escreve um único HTML no tema "Relatório Semanal" (mockup de
+30/09/2026: fundo verde, folha clara com o menu no canto, marca d'água). O CSS
+do tema é CSS_SEMANAL, em dashboard_base.py, junto com JS, conversor de markdown
+e helpers. Seções: Destaques da Semana, Sobre a Semana (id "briefing"), Evolução
+e Eficácia. Nunca lança exceção por dado ausente: cada seção degrada e o
+restante é gerado.
+
+"Cliente que mais criou chamado" soma criados_por_cliente (campo location do
+Milldesk, gravado por arquivar.py a partir de 30/09/2026); linha sem o campo fica
+fora da conta e o bloco diz em quantos dias da semana a contagem entrou.
 
 Regras do recorte (as mesmas do prompt em briefing_semanal.bat):
   - só linhas com 'data' nos últimos 12 dias corridos contados a partir de hoje;
@@ -20,13 +26,14 @@ from __future__ import annotations
 
 import re
 import sys
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dashboard_base import (
-    ABELHA_SVG, CSS, FAVO_CHEIO, FAVO_COMPACTO, JS_CHARTS, JS_HEADER, JS_UI, MOSTRAR_RANKING, TRACO_SVG,
-    badge_delta, carregar_chart_js, carregar_fontes_css, grafico, carregar_gsap, coletar_nomes_tecnicos,
-    dividir_briefing, esc, favo_svg, fmt_num, inline_md, json_inline, label_dia, ler_historico, markdown_para_html,
+    CSS, CSS_SEMANAL, JS_CHARTS, JS_HEADER, JS_SEMANAL, JS_UI, MOSTRAR_RANKING,
+    badge_delta, carregar_chart_js, carregar_fontes_css, carregar_fontes_inter_css, grafico, carregar_gsap, coletar_nomes_tecnicos,
+    dividir_briefing, esc, fmt_num, inline_md, json_inline, label_dia, ler_historico, markdown_para_html,
     num_html, redigir_nomes, render_ranking, secao_vazia, titulo_secao,
 )
 
@@ -38,16 +45,13 @@ JANELA_DIAS = 12
 DIAS_SEMANA = 5
 MIN_DIAS_ANTERIOR = 3
 
-# Mesmas 6 posições do favo diário; os ids "briefing" e "evolucao" são mantidos porque o JS reaproveitado
-# depende deles (setas do slider e montagem dos gráficos).
-FAVO_ORDEM_SEMANAL = [
-    ("destaques", "Destaques"), ("briefing", "Relatório"), ("evolucao", "Evolução"),
-    ("eficacia", "Eficácia"), ("comparacao", "Semanas"), ("dias", "Dia a dia"),
+# Menu do tema "Relatório Semanal" (mockup de 30/09/2026). Os ids "briefing" e "evolucao" são mantidos
+# porque o JS reaproveitado depende deles (setas do slider e montagem dos gráficos). As seções
+# "Semanas" e "Dia a dia" saíram nesta mudança, por decisão do Guilherme.
+ORDEM_SEMANAL = [
+    ("destaques", "Destaques da Semana"), ("briefing", "Sobre a Semana"),
+    ("evolucao", "Evolução"), ("eficacia", "Eficácia"),
 ]
-FAVO_NAV_SEMANAL = {(-1, 1): "destaques", (1, 0): "evolucao", (-1, 0): "eficacia",
-                    (1, -1): "dias", (0, -1): "briefing", (0, 0): "comparacao"}
-
-# Só o que o diário não tem. Nomes novos não colidem com as classes do ranking (.linha, .barra, .valor...).
 
 
 # ----------------------------------------------------------------------------
@@ -70,7 +74,7 @@ def inteiro(valor) -> int | None:
         return None
     try:
         return int(valor)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -131,8 +135,22 @@ def resumo_semana(regs: list[dict]) -> dict:
         vals = [(r, v) for r, v in vals if v is not None]
         if not vals:
             return None
+        # "véspera" = registro imediatamente anterior ao último (com o campo preenchido)
+        vespera = vals[-2] if len(vals) > 1 else None
         return {"ini": vals[0][1], "ini_data": vals[0][0]["data"],
-                "fim": vals[-1][1], "fim_data": vals[-1][0]["data"], "n": len(vals)}
+                "fim": vals[-1][1], "fim_data": vals[-1][0]["data"], "n": len(vals),
+                "vespera": vespera[1] if vespera else None,
+                "vespera_data": vespera[0]["data"] if vespera else None}
+
+    # Carga por dev: o retrato do último registro da semana que tem o campo.
+    carga_dev, carga_data = None, None
+    for r in reversed(regs):
+        dp = r.get("dev_por_pessoa")
+        if isinstance(dp, dict) and dp:
+            carga_dev = [(str(n), inteiro(v)) for n, v in dp.items()]
+            carga_dev.sort(key=lambda kv: (-(kv[1] if kv[1] is not None else -1), kv[0]))
+            carga_data = r["data"]
+            break
 
     return {
         "registros": regs,
@@ -145,9 +163,70 @@ def resumo_semana(regs: list[dict]) -> dict:
         "atend_dias": [(str(r.get("atend_dia_ref") or label_dia(r["data"])), v) for r, v in atend],
         "por_tecnico": sorted(por_tecnico.items(), key=lambda kv: kv[1], reverse=True),
         "fila": extremos("fila_abertos"),
+        # quantos status entraram na fila em cada dia: mais de um valor = a régua mudou na semana
+        "fila_regua_ok": len({r.get("fila_status_qtd") for r in regs if inteiro(r.get("fila_abertos")) is not None}) <= 1,
         "lic_vencidas": extremos("lic_vencidas_recentes"),
         "lic_vencendo": extremos("lic_vencendo"),
+        "carga_dev": carga_dev,
+        "carga_data": carga_data,
+        "clientes": clientes_da_semana(regs),
     }
+
+
+def chave_cliente(nome) -> str:
+    """Mesma regra do coletor (chave_local): sem acento, sem caixa, espaços colapsados."""
+    texto = unicodedata.normalize("NFD", str(nome))
+    return " ".join("".join(c for c in texto if unicodedata.category(c) != "Mn").lower().split())
+
+
+def clientes_da_semana(regs: list[dict]) -> dict:
+    """Soma criados_por_cliente dos dias da semana (mesma regra dos atendimentos: dia de referência
+    repetido conta uma vez). Devolve o cliente com mais chamados e o sistema mais afetado nele.
+    'dias' = quantos dias entraram (linhas anteriores a 30/09/2026 não têm o campo)."""
+    # O mesmo cliente pode vir grafado diferente em dias diferentes ("Câmara X" / "CAMARA X"):
+    # soma pela forma normalizada e exibe a grafia que mais apareceu na semana.
+    total: dict[str, int] = {}
+    sistemas: dict[str, dict[str, int]] = {}
+    grafias: dict[str, dict[str, int]] = {}
+    # Um dia de referência conta uma vez, e vale a coleta MAIS RECENTE QUE TEM o dado: se o
+    # briefing rodou no sábado (ok) e de novo na segunda com o período falhando (None), o
+    # sábado não pode ser descartado. (O _conta_atend dos atendimentos não serve aqui.)
+    por_ref: dict[str, dict] = {}
+    refs: set[str] = set()
+    for r in regs:
+        ref = str(r.get("atend_dia_ref") or "").strip() or f"data:{r['data']}"
+        refs.add(ref)
+        if isinstance(r.get("criados_por_cliente"), dict):
+            por_ref[ref] = r["criados_por_cliente"]
+    dias = len(por_ref)
+    for pc in por_ref.values():
+        for cliente, bloco in pc.items():
+            if not isinstance(bloco, dict):
+                continue
+            q = inteiro(bloco.get("total"))
+            if q is None:
+                continue
+            chave = chave_cliente(cliente)
+            grafias.setdefault(chave, {})
+            grafias[chave][str(cliente)] = grafias[chave].get(str(cliente), 0) + q
+            total[chave] = total.get(chave, 0) + q
+            por_sis = sistemas.setdefault(chave, {})
+            ps = bloco.get("por_sistema")
+            for sis, qs in (ps if isinstance(ps, dict) else {}).items():
+                v = inteiro(qs)
+                if v is not None:
+                    por_sis[str(sis)] = por_sis.get(str(sis), 0) + v
+    possiveis = len(refs)
+    if not total:
+        return {"dias": dias, "possiveis": possiveis, "cliente": None}
+    # maior total; empate decide pela ordem alfabética (estável entre gerações) e é avisado
+    chave, qtd = min(total.items(), key=lambda kv: (-kv[1], kv[0]))
+    empatados = sum(1 for v in total.values() if v == qtd) - 1
+    cliente = min(grafias[chave].items(), key=lambda kv: (-kv[1], kv[0]))[0]
+    por_sis = sistemas.get(chave) or {}
+    sistema = min(por_sis.items(), key=lambda kv: (-kv[1], kv[0])) if por_sis else None
+    return {"dias": dias, "possiveis": possiveis, "cliente": cliente, "total": qtd, "empatados": empatados,
+            "sistema": sistema[0] if sistema else None, "sistema_qtd": sistema[1] if sistema else None}
 
 
 # ----------------------------------------------------------------------------
@@ -156,17 +235,118 @@ def resumo_semana(regs: list[dict]) -> dict:
 SEM_DADO = '<span class="sem-dado">—</span>'
 
 
-def badge_decimal(atual: float | None, anterior: float | None, rotulo: str, melhor: str = "maior") -> str:
-    """Como badge_delta, para médias com uma casa decimal."""
-    if atual is None or anterior is None:
-        return ""
-    d = round(atual - anterior, 1)
-    if d == 0:
-        return f'<span class="badge neutro"><span aria-hidden="true">=</span><b>0</b> {esc(rotulo)}</span>'
-    subiu = d > 0
-    bom = (subiu and melhor == "maior") or (not subiu and melhor == "menor")
-    seta = "↑" if subiu else "↓"
-    return f'<span class="badge {"bom" if bom else ""}"><span aria-hidden="true">{seta}</span><b>{fmt_dec(abs(d))}</b> {esc(rotulo)}</span>'
+def nome_curto(nome: str) -> str:
+    """'Rafael Fernando Sandalo' -> 'Rafael S' (cabe na coluna). Nome de uma palavra fica como está."""
+    partes = str(nome).split()
+    return partes[0] if len(partes) < 2 else f"{partes[0]} {partes[-1][0]}"
+
+
+def rotulo_com_seta(texto: str, titulo: str = "") -> str:
+    """Rótulo cinza com a seta fina embaixo ("Por Técnico", "Carga por Dev"), como no mockup."""
+    t = f' title="{esc(titulo)}"' if titulo else ""
+    return (f'<div class="sem-por"{t}><p class="sem-rotulo">{esc(texto)}</p>'
+            '<span class="sem-seta" aria-hidden="true"></span></div>')
+
+
+def lista_pessoas(pares: list, rotulo_aria: str, classe: str = "", curto: bool = False, anonimo: str = "") -> str:
+    """Colunas nome-em-cima / número-embaixo. `anonimo` troca o nome por "<anonimo> N"
+    (DASHBOARD_MOSTRAR_RANKING=false esconde nome de pessoa em todo lugar)."""
+    itens = []
+    for i, (nome, valor) in enumerate(pares, 1):
+        visivel = f"{anonimo} {i}" if anonimo else (nome_curto(nome) if curto else str(nome))
+        titulo = "" if anonimo else f' title="{esc(nome)}"'
+        numero = num_html(valor) if valor is not None else SEM_DADO
+        itens.append(f'<li class="sem-pessoa"{titulo}><span class="sem-pessoa-nome">{esc(visivel)}</span>'
+                     f'<span class="sem-pessoa-num">{numero}</span></li>')
+    return f'<ul class="sem-pessoas {classe}" aria-label="{esc(rotulo_aria)}">{"".join(itens)}</ul>'
+
+
+def bloco_atendimentos(atual: dict, anterior: dict, comparavel: bool) -> str:
+    soma = atual["atend_soma"]
+    if soma is None:
+        kpi = (f'<p class="sem-num">{SEM_DADO}</p>'
+               '<div class="sem-lado"><p class="sem-nota">Sem atendimentos registrados na semana.</p></div>')
+    else:
+        badge = badge_delta(soma, anterior["atend_soma"], "vs. semana anterior", melhor="maior") if comparavel else ""
+        dias = "1 dia" if atual["atend_n"] == 1 else f'{atual["atend_n"]} dias'
+        kpi = (f'<p class="sem-num">{num_html(soma)}</p>'
+               f'<div class="sem-lado">{badge}<p class="sem-media" title="média de {dias}">'
+               f'<b>{fmt_dec(atual["atend_media"])}</b> por dia</p></div>')
+    tecnicos = ""
+    if atual["por_tecnico"]:
+        tecnicos = (rotulo_com_seta("Por Técnico", "soma da semana, técnico por técnico")
+                    + lista_pessoas(atual["por_tecnico"], "Atendimentos da semana por técnico",
+                                    anonimo="" if MOSTRAR_RANKING else "Técnico"))
+    return (f'<div class="sem-bloco sem-anima" style="--i:0"><h3 class="sem-rotulo">Total Atendimentos</h3>'
+            f'<div class="sem-kpi">{kpi}{tecnicos}</div></div>')
+
+
+def bloco_fila(atual: dict) -> str:
+    fila = atual["fila"]
+    if not fila:
+        kpi = (f'<p class="sem-num">{SEM_DADO}</p>'
+               '<div class="sem-lado"><p class="sem-nota">Sem fila registrada na semana.</p></div>')
+    elif fila["n"] == 1:
+        kpi = (f'<p class="sem-num">{num_html(fila["fim"])}</p><div class="sem-lado">'
+               f'<p class="sem-nota">um único registro na semana · {esc(label_dia(fila["fim_data"]))}</p></div>')
+    else:
+        linhas = f'<p class="sem-linha-fila"><b>{fmt_num(fila["ini"])}</b> em {esc(label_dia(fila["ini_data"]))}</p>'
+        if fila["n"] > 2:  # com só 2 registros a véspera é o próprio início
+            linhas += (f'<p class="sem-linha-fila"><b>{fmt_num(fila["vespera"])}</b> '
+                       f'em {esc(label_dia(fila["vespera_data"]))}</p>')
+        badge = badge_delta(fila["fim"], fila["ini"], "vs. início da semana", melhor="menor")
+        if not atual["fila_regua_ok"]:  # degrau falso: o conjunto de status consultados mudou
+            badge = '<p class="sem-nota">comparação suspensa: a régua de status mudou nesta semana</p>'
+        kpi = (f'<p class="sem-num" title="fila em {esc(label_dia(fila["fim_data"]))}">{num_html(fila["fim"])}</p>'
+               f'<div class="sem-lado">{badge}{linhas}</div>')
+    return (f'<div class="sem-bloco sem-esq sem-anima" style="--i:1"><h3 class="sem-rotulo">Fila de Chamados</h3>'
+            f'<div class="sem-kpi">{kpi}</div></div>')
+
+
+def bloco_cliente(atual: dict) -> str:
+    c = atual["clientes"]
+    if c["cliente"] is None:
+        motivo = ("Nenhum chamado de cliente nos dias com contagem." if c["dias"] else
+                  "Sem contagem por cliente nos dias desta semana (campo criados_por_cliente ausente no histórico).")
+        corpo = f'<p class="sem-cliente-nome">—</p><p class="sem-nota">{esc(motivo)}</p>'
+    else:
+        sistema = (f'<p class="sem-detalhe">Sistema mais afetado: <b>{esc(c["sistema"])}</b></p>'
+                   if c["sistema"] else "")
+        notas = []
+        if c["dias"] < c["possiveis"]:
+            notas.append(f'contagem em {c["dias"]} de {c["possiveis"]} dia(s) da semana')
+        if c["empatados"]:
+            notas.append(f'empatado com mais {c["empatados"]} cliente(s)')
+        nota = f'<p class="sem-nota">{esc(" · ".join(notas))}</p>' if notas else ""
+        corpo = (f'<p class="sem-cliente-nome">{esc(c["cliente"])}</p>'
+                 f'<div><p class="sem-detalhe">Total: <b>{fmt_num(c["total"])}</b></p>{sistema}</div>{nota}')
+    return (f'<div class="sem-bloco sem-cliente sem-anima" style="--i:2"><h3 class="sem-rotulo">Cliente que mais criou chamado</h3>'
+            f'{corpo}</div>')
+
+
+def bloco_carga(atual: dict) -> str:
+    carga = atual["carga_dev"]
+    if not carga:
+        return ('<div class="sem-carga sem-anima" style="--i:3">' + rotulo_com_seta("Carga por Dev")
+                + '<p class="sem-nota">Sem carga por dev registrada na semana.</p></div>')
+    quando = label_dia(atual["carga_data"])
+    return ('<div class="sem-carga sem-anima" style="--i:3">'
+            + rotulo_com_seta("Carga por Dev", f"chamados em aberto atribuídos a cada dev em {quando}")
+            + lista_pessoas(carga, f"Chamados em aberto por dev em {quando}", classe="sem-devs", curto=True,
+                            anonimo="" if MOSTRAR_RANKING else "DEV")
+            + '</div>')
+
+
+def secao_destaques_semana(atual: dict, anterior: dict, comparavel: bool) -> str:
+    return f"""
+<section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
+  <header class="sem-cabeca bloco-fixo">{titulo_secao("Destaques da Semana", "destaques")}</header>
+  <div class="sem-corpo bloco-elastico">
+    <div class="sem-linha">{bloco_atendimentos(atual, anterior, comparavel)}</div>
+    <div class="sem-linha">{bloco_fila(atual)}{bloco_cliente(atual)}</div>
+    {bloco_carga(atual)}
+  </div>
+</section>"""
 
 
 def gerar_html() -> str:
@@ -175,7 +355,7 @@ def gerar_html() -> str:
     relatorio, relatorio_em = ler_relatorio_semanal()
     chart_js = carregar_chart_js()
     gsap_js = carregar_gsap()
-    fontes_css = carregar_fontes_css()
+    fontes_css = carregar_fontes_css() + carregar_fontes_inter_css()
 
     recorte = recortar(historico, agora.date())
     atual = resumo_semana(recorte[-DIAS_SEMANA:])
@@ -185,99 +365,17 @@ def gerar_html() -> str:
     sem_historico = f"Sem registros nos últimos {JANELA_DIAS} dias em historico/metricas.jsonl."
     periodo = f"{label_dia(atual['primeira'])} a {fmt_data(atual['ultima'])}" if recorte else "—"
 
-    def cabeca_kpi(id_: str, rotulo: str) -> str:
-        return f'<div class="kpi-cabeca"><h3 class="kpi-rotulo" id="{id_}">{rotulo}</h3></div>'
-
     # ================================================================ 1. DESTAQUES
     if not recorte:
-        secao_destaques = secao_vazia("destaques", "Destaques da semana", sem_historico)
+        secao_destaques = secao_vazia("destaques", "Destaques da Semana", sem_historico)
     else:
-        soma = atual["atend_soma"]
-        por_tecnico = atual["por_tecnico"]
-        if MOSTRAR_RANKING and por_tecnico:
-            quebra = '<span class="sep" aria-hidden="true">•</span>'.join(
-                f"<span>{esc(n)} <b>{fmt_num(v)}</b></span>" for n, v in por_tecnico)
-            lado_largo = (f'<div class="kpi-quebra" aria-label="Atendimentos por técnico"><span class="titulo">Por técnico</span>'
-                          f'<p class="lista">{quebra}</p></div>')
-        elif por_tecnico:
-            lado_largo = f'<p class="kpi-rodape"><b>{len(por_tecnico)}</b> técnicos na soma</p>'
-        else:
-            lado_largo = ""
-        if soma is None:
-            linha_atend = '<p class="kpi-numero"><span class="sem-dado">—</span></p><p class="kpi-vazio">Sem atendimentos registrados na semana.</p>'
-        else:
-            badge_sem = badge_delta(soma, anterior["atend_soma"], "vs. semana anterior", melhor="maior") if comparavel else ""
-            dias_media = "1 dia" if atual["atend_n"] == 1 else f"{atual['atend_n']} dias"
-            linha_atend = (f'<p class="kpi-numero">{num_html(soma)}</p><div class="kpi-juizo">{badge_sem}</div>'
-                           f'<p class="kpi-secundario"><b>{fmt_dec(atual["atend_media"])}</b> por dia (média de {dias_media})</p>')
-        card_largo = f"""
-<article class="card kpi kpi-primario" style="--i:0" aria-labelledby="c-atend">
-  {cabeca_kpi("c-atend", "Atendimentos da semana")}
-  <div class="kpi-corpo">
-    <div class="kpi-linha">{linha_atend}</div>
-    {lado_largo}
-  </div>
-</article>"""
-
-        fila = atual["fila"]
-        if fila:
-            varios = fila["n"] > 1
-            badge_fila = badge_delta(fila["fim"], fila["ini"], "vs. início da semana", melhor="menor") if varios else ""
-            rodape_fila = (f'<b>{fmt_num(fila["ini"])}</b> em {esc(label_dia(fila["ini_data"]))} → '
-                           f'<b>{fmt_num(fila["fim"])}</b> em {esc(label_dia(fila["fim_data"]))}') if varios else \
-                f'um único registro na semana · <b>{esc(label_dia(fila["fim_data"]))}</b>'
-            card_fila = f"""
-<article class="card kpi" style="--i:1" aria-labelledby="c-fila">
-  {cabeca_kpi("c-fila", "Fila de chamados")}
-  <p class="kpi-numero">{num_html(fila["fim"])}</p>
-  <div class="kpi-juizo">{badge_fila}</div>
-  <p class="kpi-rodape">{rodape_fila}</p>
-</article>"""
-        else:
-            card_fila = f"""
-<article class="card kpi" style="--i:1" aria-labelledby="c-fila">
-  {cabeca_kpi("c-fila", "Fila de chamados")}
-  <p class="kpi-numero">{SEM_DADO}</p>
-  <p class="kpi-rodape">sem fila registrada na semana</p>
-</article>"""
-
-        legenda_dias = "dia registrado" if atual["n"] == 1 else "dias registrados"
-        anterior_txt = f' · semana anterior: <b>{anterior["n"]}</b> dia(s)' if anterior["n"] else ""
-        card_periodo = f"""
-<article class="card kpi" style="--i:2" aria-labelledby="c-periodo">
-  {cabeca_kpi("c-periodo", "Período coberto")}
-  <div class="kpi-linha"><p class="kpi-numero">{num_html(atual["n"])}</p><p class="kpi-legenda">{legenda_dias} de {DIAS_SEMANA}</p></div>
-  <p class="kpi-rodape"><b>{esc(periodo)}</b>{anterior_txt}</p>
-</article>"""
-
-        venc, vencendo = atual["lic_vencidas"], atual["lic_vencendo"]
-        badge_lic = badge_delta(venc["fim"], venc["ini"], "vs. início da semana", melhor="menor") if venc and venc["n"] > 1 else ""
-        rodape_lic = (f'<p class="kpi-rodape"><b>{fmt_num(venc["ini"])}</b> vencidas recentes em {esc(label_dia(venc["ini_data"]))}</p>'
-                      if venc and venc["n"] > 1 else "")
-        card_lic = f"""
-<article class="card kpi kpi-dupla" style="--i:3" aria-labelledby="c-lic">
-  {cabeca_kpi("c-lic", "Licenças · fim da semana")}
-  <div class="kpi-par">
-    <div class="kpi-medida"><p class="kpi-numero">{num_html(venc["fim"]) if venc else SEM_DADO}</p><p class="kpi-legenda">vencidas recentes</p></div>
-    <div class="kpi-medida"><p class="kpi-numero menor">{num_html(vencendo["fim"]) if vencendo else SEM_DADO}</p><p class="kpi-legenda">vencendo em breve</p></div>
-  </div>
-  <div class="kpi-juizo">{badge_lic}</div>
-  {rodape_lic}
-</article>"""
-
-        secao_destaques = f"""
-<section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
-  <div class="grade-destaques bloco-elastico">
-    {titulo_secao("Destaques da semana", "destaques", ["Destaques", "Da Semana"])}
-    {card_largo}{card_fila}{card_periodo}{card_lic}
-  </div>
-</section>"""
+        secao_destaques = secao_destaques_semana(atual, anterior, comparavel)
 
     # ================================================================ 2. RELATÓRIO
     ultima_data = data_iso(historico[-1]["data"]) if historico else None
     relatorio_velho = bool(relatorio_em and ultima_data and relatorio_em.date() < ultima_data)
     if relatorio is None:
-        secao_briefing = secao_vazia("briefing", "Relatório da Semana", "Relatório indisponível (relatorio_semanal.md ausente ou vazio).")
+        secao_briefing = secao_vazia("briefing", "Sobre a Semana", "Relatório indisponível (relatorio_semanal.md ausente ou vazio).")
     else:
         texto = relatorio if MOSTRAR_RANKING else redigir_nomes(relatorio, nomes_tecnicos)
         _, slides = dividir_briefing(texto)
@@ -309,7 +407,7 @@ def gerar_html() -> str:
         carimbo_rel = relatorio_em.strftime("%d/%m/%Y %H:%M") if relatorio_em else ""
         secao_briefing = f"""
 <section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Relatório da Semana", "briefing")}<p class="lado carimbo-briefing">{esc(carimbo_rel)}</p></header>
+  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Sobre a Semana", "briefing")}<p class="lado carimbo-briefing">{esc(carimbo_rel)}</p></header>
   <div class="slider bloco-elastico" aria-roledescription="carrossel" aria-label="Tópicos do relatório semanal">
     <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
     <div class="slider-controles">
@@ -387,83 +485,7 @@ def gerar_html() -> str:
   </article>
 </section>"""
 
-    # ================================================================ 5. SEMANAS
-    if not recorte:
-        secao_comparacao = secao_vazia("comparacao", "Semanas", sem_historico)
-    elif not comparavel:
-        secao_comparacao = secao_vazia(
-            "comparacao", "Semanas",
-            f"Comparação indisponível: a semana anterior tem {anterior['n']} dia(s) registrado(s) nos últimos "
-            f"{JANELA_DIAS} dias, e são necessários pelo menos {MIN_DIAS_ANTERIOR}.")
-    else:
-        def card_cmp(i: int, id_: str, rotulo: str, valor: str, badge: str, rodape: str) -> str:
-            return f"""
-<article class="card card-fonte kpi" style="--i:{i}" aria-labelledby="{id_}">
-  {cabeca_kpi(id_, rotulo)}
-  <p class="kpi-numero">{valor}</p>
-  <div class="kpi-juizo">{badge}</div>
-  <p class="kpi-rodape">{rodape}</p>
-</article>"""
-        fila_a, fila_p = atual["fila"], anterior["fila"]
-        cards_cmp = (
-            card_cmp(0, "s-atend", "Atendimentos",
-                     num_html(atual["atend_soma"]) if atual["atend_soma"] is not None else SEM_DADO,
-                     badge_delta(atual["atend_soma"], anterior["atend_soma"], "vs. semana anterior", melhor="maior"),
-                     f'semana anterior: <b>{fmt_num(anterior["atend_soma"])}</b> em {anterior["atend_n"]} dia(s)')
-            + card_cmp(1, "s-media", "Média diária",
-                       fmt_dec(atual["atend_media"]) if atual["atend_media"] is not None else SEM_DADO,
-                       badge_decimal(atual["atend_media"], anterior["atend_media"], "vs. semana anterior", melhor="maior"),
-                       f'semana anterior: <b>{fmt_dec(anterior["atend_media"])}</b> por dia')
-            + card_cmp(2, "s-fila", "Fila no fim da semana",
-                       num_html(fila_a["fim"]) if fila_a else SEM_DADO,
-                       badge_delta(fila_a["fim"] if fila_a else None, fila_p["fim"] if fila_p else None, "vs. semana anterior", melhor="menor"),
-                       f'semana anterior: <b>{fmt_num(fila_p["fim"]) if fila_p else "—"}</b>'
-                       + (f' em {esc(label_dia(fila_p["fim_data"]))}' if fila_p else ""))
-        )
-        faixa = (f'atual {esc(label_dia(atual["primeira"]))}–{esc(label_dia(atual["ultima"]))} · '
-                 f'anterior {esc(label_dia(anterior["primeira"]))}–{esc(label_dia(anterior["ultima"]))}')
-        secao_comparacao = f"""
-<section class="secao" id="comparacao" data-scroll aria-labelledby="t-comparacao">
-  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Semanas", "comparacao")}<p class="lado subtitulo">{faixa}</p></header>
-  <div class="grade grade-fontes bloco-elastico">{cards_cmp}</div>
-</section>"""
-
-    # ================================================================ 6. DIA A DIA
-    if not recorte:
-        secao_dias = secao_vazia("dias", "Dia a dia", sem_historico)
-    else:
-        inicio_atual = len(recorte) - atual["n"]
-        linhas = []
-        for i in range(len(recorte) - 1, -1, -1):
-            r = recorte[i]
-            na_atual = i >= inicio_atual
-            if r["_conta_atend"]:
-                atend_td = fmt_num(r.get("atend_total"))
-            else:
-                atend_td = '<span class="apagado" title="Mesmo dia de referência de um registro mais recente; não entra na soma">repetido</span>'
-            linhas.append(
-                f'<tr><td class="num">{esc(fmt_data(r["data"]))}</td>'
-                f'<td><span class="pill {"atual" if na_atual else "anterior"}">{"Semana atual" if na_atual else "Anterior"}</span></td>'
-                f'<td class="num">{fmt_num(r.get("fila_abertos"))}</td><td class="num">{fmt_num(r.get("meus_abertos"))}</td>'
-                f'<td class="num">{atend_td}</td><td>{esc(r.get("atend_dia_ref") or "—")}</td>'
-                f'<td class="num">{fmt_num(r.get("lic_vencidas_recentes"))}</td><td class="num">{fmt_num(r.get("lic_vencendo"))}</td></tr>'
-            )
-        sintese = ('<div class="lado">'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(len(recorte))}</p><p class="kpi-legenda">registros em {JANELA_DIAS} dias</p></div>'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(atual["n"])}</p><p class="kpi-legenda">semana atual</p></div>'
-                   f'<div class="kpi-medida"><p class="kpi-numero menor">{num_html(anterior["n"])}</p><p class="kpi-legenda">semana anterior</p></div>'
-                   '</div>')
-        secao_dias = f"""
-<section class="secao" id="dias" aria-labelledby="t-dias">
-  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Dia a dia", "dias")}{sintese}</header>
-  <div class="tabela-clara bloco-elastico" data-scroll tabindex="0" role="region" aria-label="Tabela de registros diários">
-    <table class="tabela-lic"><caption class="sr-only">Registros diários dos últimos {JANELA_DIAS} dias, do mais recente ao mais antigo</caption>
-      <thead><tr><th scope="col" class="num">Data</th><th scope="col">Semana</th><th scope="col" class="num">Fila</th><th scope="col" class="num">Abertos da equipe</th><th scope="col" class="num">Atendimentos</th><th scope="col">Dia de referência</th><th scope="col" class="num">Vencidas recentes</th><th scope="col" class="num">Vencendo</th></tr></thead>
-      <tbody>{''.join(linhas)}</tbody></table>
-  </div>
-</section>"""
-
-    # ================================================================ cabeçalho
+    # ================================================================ moldura
     gerado_em = agora.strftime("%d/%m/%Y %H:%M")
     avisos = ""
     if relatorio is None:
@@ -472,19 +494,24 @@ def gerar_html() -> str:
         avisos += (f'<a class="aviso" href="#briefing" data-alvo="briefing">relatório desatualizado · '
                    f'de {esc(relatorio_em.strftime("%d/%m"))}</a>')
     if not recorte:
-        avisos += '<a class="aviso grave" href="#dias" data-alvo="dias">histórico sem registros recentes</a>'
+        avisos += '<span class="aviso grave">histórico sem registros recentes</span>'
     semana_txt = f"Semana de {esc(periodo)}" if recorte else "Semana sem registros"
-
-    favo_cheio, _ = favo_svg(FAVO_CHEIO, passo=63, fonte=12, classe="favo-cheio", nav=FAVO_NAV_SEMANAL, ordem=FAVO_ORDEM_SEMANAL)
-    favo_compacto, _ = favo_svg(FAVO_COMPACTO, passo=66, fonte=12, classe="favo-compacto", nav=FAVO_NAV_SEMANAL, ordem=FAVO_ORDEM_SEMANAL)
-    menu_simples = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in FAVO_ORDEM_SEMANAL)
+    dados_de = fmt_data(atual["ultima"]) if recorte else "—"
+    menu = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in ORDEM_SEMANAL)
 
     script = f"<script>{JS_UI}</script>"
     if gsap_js is not None:
-        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER}</script>"
+        # A contagem dos números passa para o GSAP (JS_SEMANAL): marca os [data-n] ANTES do JS_UI,
+        # que só conta os que não têm data-contado. Se o GSAP falhar, o texto já é o valor final.
+        script = ('<script>Array.prototype.forEach.call(document.querySelectorAll("[data-n]"),'
+                  'function(el){el.setAttribute("data-contado","gsap")});</script>\n' + script)
+        script += f"\n<script>{gsap_js}</script>\n<script>{JS_HEADER}</script>\n<script>{JS_SEMANAL}</script>"
+    # "anim"/"sem-entrada" escondem o que o GSAP vai revelar; o setTimeout é a rede de segurança
+    # caso o script nunca chegue a rodar (a página não pode ficar sem menu).
     marcador_anim = (
-        '<script>(function(){try{if(!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches))'
-        'document.documentElement.classList.add("anim")}catch(e){}})();</script>'
+        '<script>(function(){try{if(!(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches)){'
+        'var r=document.documentElement;r.classList.add("anim","sem-entrada");'
+        'setTimeout(function(){r.classList.remove("sem-entrada")},4000)}}catch(e){}})();</script>'
     ) if gsap_js is not None else ""
     if chart_js is not None and recorte:
         payload_graficos = {
@@ -497,38 +524,39 @@ def gerar_html() -> str:
         }
         script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload_graficos))}</script>"
 
+    # Marca d'água em Inter Black, na proporção NATURAL do texto: a 100px ele mede 1107 de
+    # largura, e 56..152 cobre do acento do "Ó" à linha de base. textLength só garante o
+    # encaixe se a fonte cair no fallback; com Inter o ajuste é nulo (sem achatar).
+    marca = ('<svg class="sem-marca" viewBox="0 56 1107 96" preserveAspectRatio="xMidYMax meet" '
+             'aria-hidden="true" focusable="false"><defs><linearGradient id="sem-marca-g" x1="0" y1="0" x2="0" y2="1">'
+             '<stop offset="0" stop-color="#11693F"/><stop offset="1" stop-color="#0C5A35"/></linearGradient></defs>'
+             '<text x="0" y="150" font-size="100" textLength="1107" lengthAdjust="spacingAndGlyphs" '
+             'fill="url(#sem-marca-g)">RELATÓRIO SEMANAL</text></svg>')
+
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Briefing Semanal — {esc(fmt_data(atual["ultima"]) if recorte else agora.strftime("%d/%m/%Y"))}</title>
-<style>{fontes_css}{CSS}</style>
+<title>Relatório Semanal — {esc(fmt_data(atual["ultima"]) if recorte else agora.strftime("%d/%m/%Y"))}</title>
+<style>{fontes_css}{CSS}{CSS_SEMANAL}</style>
 {marcador_anim}
 </head>
-<body>
+<body class="pag-semanal">
 <a class="pular" href="#destaques">Ir para o conteúdo</a>
 <div class="palco">
-<header class="topo">
-  <a class="marca" href="#destaques" data-alvo="destaques" aria-label="Briefing Semanal — início">
-    {ABELHA_SVG}
-    <h1 class="wordmark"><span class="w" style="--traco-w:50%">Briefing{TRACO_SVG}</span><span class="w">Semanal{TRACO_SVG}</span></h1>
-  </a>
-  <nav class="favo" aria-label="Seções do briefing semanal">
-    {favo_cheio}
-    {favo_compacto}
-    <div class="menu-simples">{menu_simples}</div>
-  </nav>
-</header>
-<p class="carimbo"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>{semana_txt}</span>{avisos}</p>
+<h1 class="sr-only">Relatório Semanal · {semana_txt}</h1>
+<div class="sem-moldura">
 <main class="colmeia" id="colmeia">
 {secao_destaques}
 {secao_briefing}
 {secao_evolucao}
 {secao_eficacia}
-{secao_comparacao}
-{secao_dias}
 </main>
+<nav class="sem-menu" aria-label="Seções do relatório semanal">{menu}</nav>
+</div>
+<p class="sem-rodape"><span>Gerado em <time datetime="{agora.strftime('%Y-%m-%dT%H:%M')}">{esc(gerado_em)}</time></span><span class="sep" aria-hidden="true">•</span><span>Dados de {esc(dados_de)}</span>{avisos}</p>
+{marca}
 </div>
 {script}
 </body>

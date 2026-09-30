@@ -575,6 +575,28 @@ def carregar_fontes_css() -> str:
     return "\n".join(blocos)
 
 
+# Inter (OFL), só no briefing semanal: Regular (400) e Black (900), subset latin
+# do @fontsource/inter 5.1.0. Sem os arquivos, a pilha --sans do sistema assume.
+FONTE_INTER = [(400, "Inter-400.woff2"), (900, "Inter-900.woff2")]
+
+
+def carregar_fontes_inter_css() -> str:
+    blocos = []
+    for peso, nome in FONTE_INTER:
+        try:
+            dados = (FONTES_DIR / nome).read_bytes()
+        except OSError:
+            continue
+        if not dados:
+            continue
+        b64 = base64.b64encode(dados).decode("ascii")
+        blocos.append(
+            "@font-face{font-family:'Inter';font-style:normal;font-weight:%d;font-display:swap;"
+            "src:url(data:font/woff2;base64,%s) format('woff2')}" % (peso, b64)
+        )
+    return "\n".join(blocos)
+
+
 # --- Menu favo de mel -------------------------------------------------------
 # Malha "pointy-top" rotacionada -15,25° (medida nos mockups). Eixo u a 44,75°,
 # eixo v a 104,75°; coordenadas (u, v) das células, com (0,0) = Fontes.
@@ -3173,5 +3195,226 @@ JS_HEADER_SINO = """
       }, 180);
     });
   } catch (e) { soltar(); }
+})();
+"""
+
+
+# --- Tema do briefing semanal ("Relatório Semanal") -------------------------
+# Só o dashboard_semanal carrega isto, depois de CSS, com <body class="pag-semanal">.
+# Moldura: fundo verde, UMA folha clara (a .colmeia) com o menu encaixado no
+# canto inferior direito, rodapé e a marca d'água "RELATÓRIO SEMANAL". Tudo é
+# escopado em .pag-semanal para não vazar nas outras páginas. Sem display:grid:
+# os blocos dos Destaques são flex e quebram linha sozinhos em tela estreita.
+# --sem-u é a unidade de escala do mockup (1440x1024 -> ~10px): as medidas
+# abaixo são "px do mockup / 10".
+CSS_SEMANAL = """
+.pag-semanal{
+  --sem-fundo:#0A5130;--sem-folha:#F3F8F4;--sem-marca:#0E5F39;
+  --sem-rotulo:#9AA39D;--sem-titulo:#C3CAC5;--sem-tinta:#0B0F0D;--sem-apagado:#8E9791;
+  --sem-menu-txt:#F3F8F4;--sem-menu-atual:#7FAE93;
+  /* Inter em toda a página, só em dois pesos: Regular (400) e Black (900) */
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --sem-num:"Inter","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  --sem-u:min(1vh,.72vw);
+  /* em vw e não em %: a mesma variável é usada no menu e no limite da faixa de devs, e %
+     resolveria contra caixas diferentes nos dois lugares */
+  --sem-menu-w:clamp(230px,27.4vw,420px);--sem-pad-x:clamp(20px,2.3vw,40px);--sem-menu-h:clamp(150px,26vh,260px);
+  --sem-raio:clamp(18px,1.8vw,26px);
+  --titulo:var(--sem-titulo);--card:#ffffff;
+  --bom-bg:#CDEFD3;--bom:#17803A;--verm-bg:#F7D0CC;--verm-ink:#B42318;
+  background:var(--sem-fundo);
+}
+.pag-semanal .palco{padding:clamp(10px,1.6vh,16px) clamp(10px,1.2vw,18px) clamp(6px,2.2vh,24px)}
+.pag-semanal :focus-visible{outline-color:var(--sem-tinta)}
+.sem-moldura{position:relative;flex:1 1 auto;min-height:0;display:flex}
+.pag-semanal .colmeia{background:var(--sem-folha);border-radius:var(--sem-raio)}
+.pag-semanal .secao{padding:clamp(18px,3.4vh,40px) var(--sem-pad-x)}
+/* as outras seções ainda não foram redesenhadas: reservam a faixa do menu embaixo */
+.pag-semanal .secao:not(#destaques){padding-bottom:calc(var(--sem-menu-h) + 10px)}
+.pag-semanal .titulo-secao{font-size:clamp(30px,calc(var(--sem-u) * 6.4),72px);color:var(--sem-titulo);line-height:1}
+/* textos que no tema mel iam direto sobre o âmbar e aqui cairiam na folha clara */
+.pag-semanal .secao .subtitulo,.pag-semanal .carimbo-briefing{color:var(--sem-rotulo)}
+
+/* ---- menu encaixado no canto da folha (os dois cantos côncavos são ::before/::after) ---- */
+.sem-menu{position:absolute;right:0;bottom:0;z-index:5;width:var(--sem-menu-w);height:var(--sem-menu-h);
+  background:var(--sem-fundo);border-top-left-radius:var(--sem-raio);
+  padding:clamp(14px,2.6vh,30px) clamp(18px,2.4vw,38px);display:flex;flex-direction:column;gap:clamp(4px,1.5vh,16px)}
+.sem-menu::before,.sem-menu::after{content:"";position:absolute;width:var(--sem-raio);height:var(--sem-raio);pointer-events:none;
+  background:radial-gradient(circle at 0 0,transparent calc(var(--sem-raio) - .5px),var(--sem-fundo) var(--sem-raio))}
+.sem-menu::before{right:0;bottom:100%}
+.sem-menu::after{right:100%;bottom:0}
+.sem-menu a{display:flex;align-items:center;gap:.85em;width:max-content;color:var(--sem-menu-txt);text-decoration:none;
+  font:900 clamp(14px,calc(var(--sem-u) * 2.05),21px)/1.25 var(--sans);letter-spacing:-.015em;transition:color .2s,transform .2s var(--ease)}
+.sem-menu a::before{content:"";flex:0 0 auto;width:.28em;height:.28em;border-radius:50%;background:currentColor}
+.sem-menu a:hover{transform:translateX(3px)}
+.sem-menu a.ativa{color:var(--sem-menu-atual)}
+.sem-menu a:focus-visible{outline:2px solid var(--sem-menu-txt);outline-offset:4px;border-radius:4px}
+
+/* ---- rodapé e marca d'água ---- */
+.sem-rodape{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;
+  padding:clamp(6px,1.3vh,14px) clamp(16px,2.2vw,32px) 0;font:900 13px/1.3 var(--sans);color:rgba(243,248,244,.74)}
+.sem-rodape .sep{opacity:.6}
+.sem-rodape .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:1px 10px;border-radius:999px;text-decoration:none}
+.sem-rodape .aviso.grave{background:var(--verm-bg);color:var(--verm-ink)}
+/* Marca d'água SEM distorção: a altura sai da proporção do viewBox (largura toda,
+   como no mockup). Em tela baixa o teto de altura manda e ela encolhe centralizada,
+   em vez de achatar. Sombra em duas camadas: uma curta que assenta a letra e uma
+   longa e difusa que dá profundidade sobre o verde. */
+.sem-marca{flex:0 0 auto;display:block;width:100%;height:auto;max-height:clamp(46px,14.5vh,160px);
+  margin-top:clamp(4px,1.4vh,16px);overflow:visible;pointer-events:none;
+  filter:drop-shadow(0 2px 1.5px rgba(2,32,17,.38)) drop-shadow(0 12px 22px rgba(1,26,13,.5))}
+.sem-marca text{font-family:"Inter",var(--sem-num);font-weight:900}
+
+/* ---- Destaques da Semana ---- */
+.sem-cabeca{display:flex;align-items:flex-end}
+.sem-corpo{display:flex;flex-direction:column;gap:calc(var(--sem-u) * 6.2);min-height:0;padding-top:calc(var(--sem-u) * 3.4)}
+.sem-linha{display:flex;flex-wrap:wrap;align-items:flex-start;gap:calc(var(--sem-u) * 3) calc(var(--sem-u) * 5)}
+.sem-bloco{display:flex;flex-direction:column;gap:calc(var(--sem-u) * 1.2);min-width:0}
+.sem-bloco.sem-esq{flex:0 1 calc(var(--sem-u) * 54)}
+/* o cliente ocupa a sobra da linha e quebra o nome DENTRO dela: nunca desce para baixo da fila */
+.sem-bloco.sem-cliente{flex:1 1 calc(var(--sem-u) * 36)}
+.sem-kpi{display:flex;flex-wrap:wrap;align-items:center;gap:calc(var(--sem-u) * 1.6) calc(var(--sem-u) * 2.2)}
+.sem-kpi>.sem-por{margin-left:calc(var(--sem-u) * 3.6)}
+.sem-kpi>.sem-pessoas{margin-left:calc(var(--sem-u) * .6)}
+.sem-rotulo{font:900 clamp(13px,calc(var(--sem-u) * 2),21px)/1.2 var(--sans);color:var(--sem-rotulo);letter-spacing:-.005em}
+.sem-num{font:900 clamp(64px,calc(var(--sem-u) * 13.8),150px)/.8 var(--sem-num);color:var(--sem-tinta);letter-spacing:-.045em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;padding:.03em .04em .02em 0}
+.sem-num .sem-dado,.sem-pessoa-num .sem-dado{color:rgba(11,15,13,.25)}
+.sem-lado{display:flex;flex-direction:column;align-items:flex-start;gap:calc(var(--sem-u) * .9)}
+.pag-semanal .sem-lado .badge{font-size:clamp(9.5px,calc(var(--sem-u) * 1.05),12px);padding:.35em 1em;gap:.45em;font-weight:400}
+.pag-semanal .sem-lado .badge b{font-size:1em;font-weight:900}
+.sem-media,.sem-linha-fila,.sem-detalhe{font:400 clamp(13px,calc(var(--sem-u) * 2),21px)/1.25 var(--sans);color:var(--sem-apagado)}
+.sem-media b,.sem-linha-fila b,.sem-detalhe b{font-family:var(--sem-num);font-weight:900;color:var(--sem-tinta)}
+.sem-media{color:var(--sem-tinta);font-weight:900}
+.sem-nota{font:400 clamp(11px,calc(var(--sem-u) * 1.35),14px)/1.35 var(--sans);color:var(--sem-apagado)}
+/* rótulo com seta: "Por Técnico" / "Carga por Dev" */
+.sem-por{display:flex;flex-direction:column;align-items:flex-start;gap:calc(var(--sem-u) * 1.3)}
+.sem-seta{position:relative;display:block;width:calc(var(--sem-u) * 12.6);min-width:70px;height:1.4px;background:var(--sem-tinta);margin-left:3px}
+.sem-seta::before{content:"";position:absolute;left:-3px;top:50%;width:5px;height:5px;border-radius:50%;background:var(--sem-tinta);transform:translateY(-50%)}
+.sem-seta::after{content:"";position:absolute;right:-1px;top:50%;border:3.5px solid transparent;border-left:6px solid var(--sem-tinta);border-right:0;transform:translateY(-50%)}
+/* pessoas (técnicos e devs): nome pequeno em cima, número grande embaixo */
+.sem-pessoas{display:flex;flex-wrap:wrap;gap:calc(var(--sem-u) * 1.4) calc(var(--sem-u) * 3.2)}
+.sem-pessoa{display:flex;flex-direction:column;align-items:center;min-width:calc(var(--sem-u) * 7.5)}
+.sem-pessoa-nome{font:900 clamp(10.5px,calc(var(--sem-u) * 1.45),15px)/1.2 var(--sans);color:var(--sem-rotulo);white-space:nowrap}
+.sem-pessoa-num{font:900 clamp(26px,calc(var(--sem-u) * 4.2),46px)/1 var(--sem-num);color:var(--sem-tinta);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.sem-devs{column-gap:calc(var(--sem-u) * 1.6)}
+.sem-devs .sem-pessoa{min-width:calc(var(--sem-u) * 6.4)}
+.sem-devs .sem-pessoa-nome{text-transform:uppercase;letter-spacing:.01em}
+.sem-cliente-nome{font:900 clamp(22px,calc(var(--sem-u) * 4.2),46px)/1.05 var(--sem-num);color:var(--sem-tinta);letter-spacing:-.025em;text-wrap:balance}
+.sem-carga{display:flex;flex-direction:column;gap:calc(var(--sem-u) * 1.6);margin-top:calc(var(--sem-u) * -2.4);
+  max-width:calc(100% - var(--sem-menu-w) + var(--sem-pad-x) - var(--sem-u) * 2)}
+.sem-carga .sem-por{padding-left:calc(var(--sem-u) * .6)}
+/* entrada: com GSAP quem anima é JS_SEMANAL; sem ele (ou sem JS) fica esta, em CSS */
+.sem-entrada .sem-menu a,.sem-entrada .sem-marca{opacity:0}
+@media (min-width:900px){
+  html:not(.gsap) .pag-semanal .secao.ativa .sem-anima{animation:entrar .6s var(--ease-out) backwards;animation-delay:calc(.12s + var(--i,0)*80ms)}
+}
+/* mesma especificidade da regra acima (html:not(.gsap) ...), senão ela vence e anima mesmo assim */
+@media (prefers-reduced-motion:reduce){html:not(.gsap) .pag-semanal .secao.ativa .sem-anima{animation:none}}
+
+/* ---- telas estreitas: menu vira faixa fixa no topo, folha rola normal ---- */
+@media (max-width:899px){
+  .pag-semanal .palco{padding:10px 10px 0}
+  .sem-moldura{flex-direction:column}
+  .sem-menu{position:sticky;top:0;order:-1;width:auto;height:auto;flex-direction:row;flex-wrap:wrap;gap:6px 16px;
+    padding:10px 6px 12px;border-radius:0;z-index:20}
+  .sem-menu::before,.sem-menu::after{display:none}
+  .sem-menu a{font-size:14px}
+  .pag-semanal .secao:not(#destaques){padding-bottom:22px}
+  .sem-carga{max-width:none;margin-top:0}
+  .sem-pessoas,.sem-devs{column-gap:18px}
+  .sem-bloco.sem-esq,.sem-bloco.sem-cliente{flex:1 1 100%}
+  .sem-num{font-size:clamp(58px,17vw,96px)}
+}
+"""
+
+# --- JS do briefing semanal (requer GSAP; carregado depois de JS_UI e JS_HEADER) ---
+# 1) Contagem dos números: SUBSTITUI a do JS_UI nesta página. O gerador marca os
+#    [data-n] com data-contado="gsap" ANTES do JS_UI rodar, então o contador antigo
+#    os ignora; se este script falhar, o texto já é o valor final (nada some).
+# 2) Entrada dos Destaques, rejogada a cada vez que a seção fica ativa.
+# 3) Entrada da moldura (menu e marca d'água), uma vez. html.sem-entrada esconde os
+#    dois até aqui; qualquer erro libera a classe.
+JS_SEMANAL = """
+(function(){
+  "use strict";
+  var doc = document, win = window, raiz = doc.documentElement;
+  var liberar = function(){ raiz.classList.remove("sem-entrada"); };
+  var lista = function(el, s){ return Array.prototype.slice.call(el.querySelectorAll(s)); };
+  var fmt = function(n){ return Math.round(n).toLocaleString("pt-BR"); };
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var g = win.gsap;
+  if (!g || rm) {
+    lista(doc, '[data-n][data-contado="gsap"]').forEach(function(el){ el.setAttribute("data-contado", "1"); });
+    liberar();
+    return;
+  }
+  raiz.classList.add("gsap");
+  try {
+    var mqPalco = win.matchMedia ? win.matchMedia("(min-width: 900px)") : null;
+    var palco = function(){ return !mqPalco || mqPalco.matches; };
+
+    // ---- contagem: 0 -> valor, uma vez por número, quando a seção dele aparece ----
+    function contar(caixa, atraso){
+      lista(caixa, '[data-n][data-contado="gsap"]').forEach(function(el, i){
+        var alvo = Number(el.getAttribute("data-n"));
+        el.setAttribute("data-contado", "1");
+        if (!isFinite(alvo) || alvo === 0) return;
+        // trava a largura final: sem isso o selo ao lado anda enquanto o número cresce
+        el.textContent = fmt(alvo);
+        el.style.display = "inline-block";
+        el.style.minWidth = el.offsetWidth + "px";  // offsetWidth ignora o scale da entrada
+        el.style.textAlign = el.closest(".sem-pessoa") ? "center" : "left";
+        var o = { v: 0 };
+        el.textContent = "0";
+        g.to(o, {
+          v: alvo, duration: alvo >= 100 ? 1.6 : 1.15, ease: "power3.out", delay: atraso + i * 0.035,
+          onUpdate: function(){ el.textContent = fmt(o.v); },
+          onComplete: function(){ el.textContent = fmt(alvo); el.style.minWidth = ""; el.style.display = ""; el.style.textAlign = ""; }
+        });
+      });
+    }
+
+    // ---- entrada dos Destaques ----
+    var tlDestaques = null;
+    function entradaDestaques(sec){
+      if (tlDestaques) tlDestaques.progress(1).kill();
+      var q = function(s){ return lista(sec, s); };
+      var limpa = "transform,opacity,clipPath";
+      tlDestaques = g.timeline({ defaults: { ease: "power3.out" } })
+        .from(q(".titulo-secao"), { y: 28, opacity: 0, duration: .9, clearProps: limpa }, 0)
+        .from(q(".sem-rotulo"), { y: 12, opacity: 0, duration: .55, stagger: .07, clearProps: limpa }, .12)
+        .from(q(".sem-num"), { y: 38, opacity: 0, scale: .93, transformOrigin: "0% 100%", duration: 1, ease: "expo.out", stagger: .14, clearProps: limpa }, .16)
+        .from(q(".sem-lado .badge"), { scale: .55, opacity: 0, transformOrigin: "0% 50%", duration: .55, ease: "back.out(2.4)", stagger: .12, clearProps: limpa }, .5)
+        .from(q(".sem-media, .sem-linha-fila, .sem-lado .sem-nota"), { x: -12, opacity: 0, duration: .55, stagger: .07, clearProps: limpa }, .58)
+        .from(q(".sem-seta"), { scaleX: 0, transformOrigin: "0% 50%", duration: .8, ease: "power2.inOut", stagger: .18, clearProps: limpa }, .5)
+        .from(q(".sem-pessoa"), { y: 18, opacity: 0, duration: .55, stagger: .045, clearProps: limpa }, .66)
+        .from(q(".sem-cliente-nome"), { clipPath: "inset(0 100% 0 0)", x: -8, duration: 1.05, ease: "expo.out", clearProps: limpa }, .5)
+        .from(q(".sem-cliente .sem-detalhe, .sem-cliente .sem-nota"), { y: 10, opacity: 0, duration: .5, stagger: .08, clearProps: limpa }, .78);
+    }
+
+    function aoAtivar(id){
+      var sec = doc.getElementById(id);
+      if (!sec) return;
+      if (id === "destaques" && palco()) entradaDestaques(sec);
+      contar(sec, id === "destaques" ? .28 : .15);
+    }
+    doc.addEventListener("secao:ativa", function(e){ if (e.detail) aoAtivar(e.detail.id); });
+
+    // ---- moldura: menu e marca d'água entram uma vez ----
+    var links = lista(doc, ".sem-menu a"), marca = doc.querySelector(".sem-marca");
+    g.set(links, { opacity: 0, x: -14 });
+    if (marca) g.set(marca, { opacity: 0, y: 26 });
+    liberar();
+    g.to(links, { opacity: 1, x: 0, duration: .65, stagger: .08, delay: .35, ease: "power3.out", clearProps: "transform,opacity" });
+    if (marca) g.to(marca, { opacity: 1, y: 0, duration: 1.5, delay: .2, ease: "expo.out", clearProps: "transform,opacity" });
+
+    // tela estreita: tudo empilhado, conta tudo de uma vez; se a seção já ativou, alcança
+    if (!palco()) contar(doc, .2);
+    else { var ja = doc.querySelector(".secao.ativa"); if (ja) aoAtivar(ja.id); }
+  } catch (e) {
+    lista(doc, ".sem-menu a, .sem-marca").forEach(function(el){ el.style.opacity = ""; el.style.transform = ""; });
+    liberar();
+  }
 })();
 """
