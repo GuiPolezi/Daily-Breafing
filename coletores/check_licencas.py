@@ -103,6 +103,35 @@ def eh_ignorada(lic: dict) -> bool:
     return any(padrao in nome for padrao in IGNORAR)
 
 
+def chave_licenca(lic: dict) -> tuple:
+    return (lic.get("cliente"), lic.get("sistema"), lic.get("vencimento"))
+
+
+def separar_vencidas(proximas: list[dict], vencidas: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Licença que vence HOJE ou antes é vencida -- e só vencida.
+
+    No dia do vencimento o próprio sistema de licenças lista a licença nas DUAS
+    tabelas ("Vencimento Próximo" e "Vencidas"); copiada assim, ela aparecia como
+    vencida e como vencendo ao mesmo tempo (visto em 30/09/2026) e as contagens a
+    somavam duas vezes. Regra (decisão do Guilherme, 30/09/2026):
+      - o que está na tabela "Vencidas" sai de "Vencimento Próximo";
+      - o que ficou em "Vencimento Próximo" com dias <= 0 vai para vencidas.
+    Sem data legível continua em "próximas" (melhor aparecer sem prazo do que sumir).
+    """
+    ja_vencidas = {chave_licenca(l) for l in vencidas}
+    vencidas_final = list(vencidas)
+    proximas_final = []
+    for lic in proximas:
+        if chave_licenca(lic) in ja_vencidas:
+            continue
+        if lic.get("dias") is not None and lic["dias"] <= 0:
+            vencidas_final.append(lic)
+            ja_vencidas.add(chave_licenca(lic))
+        else:
+            proximas_final.append(lic)
+    return proximas_final, vencidas_final
+
+
 def main() -> None:
     sessao = requests.Session()
     fazer_login(sessao)
@@ -120,6 +149,10 @@ def main() -> None:
     # Separa produção de homologação/teste
     proximas_prod = [l for l in proximas if not eh_ignorada(l)]
     vencidas_prod = [l for l in vencidas if not eh_ignorada(l)]
+    # contado ANTES de separar_vencidas: a remoção das duplicatas não é homologação/teste
+    ignoradas = len(proximas) + len(vencidas) - len(proximas_prod) - len(vencidas_prod)
+    # Vence hoje (ou já venceu) = só vencida, nunca nas duas listas
+    proximas_prod, vencidas_prod = separar_vencidas(proximas_prod, vencidas_prod)
 
     # Vencidas recentes = ainda acionáveis; antigas = só contagem
     vencidas_recentes = [
@@ -143,8 +176,7 @@ def main() -> None:
         "vencidas_recentes": sorted(vencidas_recentes, key=por_prazo(0)),
         "vencidas_antigas_total": len(vencidas_prod) - len(vencidas_recentes),
         "vencendo_alem_da_janela": len(proximas_prod) - len(vencendo),
-        "ignoradas_homolog_teste": len(proximas) + len(vencidas)
-        - len(proximas_prod) - len(vencidas_prod),
+        "ignoradas_homolog_teste": ignoradas,
     }
 
     SAIDA.parent.mkdir(exist_ok=True)
