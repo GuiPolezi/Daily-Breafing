@@ -524,10 +524,11 @@ def gerar_html() -> str:
         }
         script += f"\n<script>{chart_js}</script>\n<script>{JS_CHARTS.replace('__DATA__', json_inline(payload_graficos))}</script>"
 
-    # Marca d'água em Inter Black, na proporção NATURAL do texto: a 100px ele mede 1107 de
-    # largura, e 56..152 cobre do acento do "Ó" à linha de base. textLength só garante o
-    # encaixe se a fonte cair no fallback; com Inter o ajuste é nulo (sem achatar).
-    marca = ('<svg class="sem-marca" viewBox="0 56 1107 96" preserveAspectRatio="xMidYMax meet" '
+    # Marca d'água em Inter Black, na proporção NATURAL do texto. viewBox = a tinta das letras
+    # medida no Chrome (a 100px: x 4..1105,5; do acento do "Ó" a 1 abaixo da linha de base),
+    # então as letras encostam nas duas bordas da tela. textLength só garante o encaixe se a
+    # fonte cair no fallback; com Inter o ajuste é nulo (sem achatar).
+    marca = ('<svg class="sem-marca" viewBox="4 53 1101.5 99" preserveAspectRatio="xMidYMax meet" '
              'aria-hidden="true" focusable="false"><defs><linearGradient id="sem-marca-g" x1="0" y1="0" x2="0" y2="1">'
              '<stop offset="0" stop-color="#11693F"/><stop offset="1" stop-color="#0C5A35"/></linearGradient></defs>'
              '<text x="0" y="150" font-size="100" textLength="1107" lengthAdjust="spacingAndGlyphs" '

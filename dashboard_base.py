@@ -3218,13 +3218,13 @@ CSS_SEMANAL = """
   --sem-u:min(1vh,.72vw);
   /* em vw e não em %: a mesma variável é usada no menu e no limite da faixa de devs, e %
      resolveria contra caixas diferentes nos dois lugares */
-  --sem-menu-w:clamp(230px,27.4vw,420px);--sem-pad-x:clamp(20px,2.3vw,40px);--sem-menu-h:clamp(150px,26vh,260px);
+  --sem-menu-w:clamp(230px,27.4vw,420px);--sem-pad-x:clamp(20px,2.3vw,40px);--sem-palco-x:clamp(10px,1.2vw,18px);--sem-menu-h:clamp(150px,26vh,260px);
   --sem-raio:clamp(18px,1.8vw,26px);
   --titulo:var(--sem-titulo);--card:#ffffff;
   --bom-bg:#CDEFD3;--bom:#17803A;--verm-bg:#F7D0CC;--verm-ink:#B42318;
   background:var(--sem-fundo);
 }
-.pag-semanal .palco{padding:clamp(10px,1.6vh,16px) clamp(10px,1.2vw,18px) clamp(6px,2.2vh,24px)}
+.pag-semanal .palco{padding:clamp(10px,1.6vh,16px) var(--sem-palco-x) clamp(6px,2.2vh,24px)}
 .pag-semanal :focus-visible{outline-color:var(--sem-tinta)}
 .sem-moldura{position:relative;flex:1 1 auto;min-height:0;display:flex}
 .pag-semanal .colmeia{background:var(--sem-folha);border-radius:var(--sem-raio)}
@@ -3256,12 +3256,13 @@ CSS_SEMANAL = """
 .sem-rodape .sep{opacity:.6}
 .sem-rodape .aviso{background:var(--ambar-bg);color:var(--ambar-ink);padding:1px 10px;border-radius:999px;text-decoration:none}
 .sem-rodape .aviso.grave{background:var(--verm-bg);color:var(--verm-ink)}
-/* Marca d'água SEM distorção: a altura sai da proporção do viewBox (largura toda,
-   como no mockup). Em tela baixa o teto de altura manda e ela encolhe centralizada,
-   em vez de achatar. Sombra em duas camadas: uma curta que assenta a letra e uma
-   longa e difusa que dá profundidade sobre o verde. */
-.sem-marca{flex:0 0 auto;display:block;width:100%;height:auto;max-height:clamp(46px,14.5vh,160px);
-  margin-top:clamp(4px,1.4vh,16px);overflow:visible;pointer-events:none;
+/* Marca d'água de PONTA A PONTA da tela (atravessa a margem lateral do palco) e SEM
+   distorção: a altura sai da proporção do viewBox, recortado na tinta das letras.
+   Sem teto de altura de propósito -- um teto faria ela encolher e deixar de ocupar a
+   largura toda. Sombra em duas camadas: uma curta que assenta a letra e uma longa e
+   difusa que dá profundidade sobre o verde. */
+.sem-marca{flex:0 0 auto;display:block;width:calc(100% + var(--sem-palco-x) * 2);height:auto;
+  margin:clamp(4px,1.4vh,16px) calc(var(--sem-palco-x) * -1) 0;overflow:visible;pointer-events:none;
   filter:drop-shadow(0 2px 1.5px rgba(2,32,17,.38)) drop-shadow(0 12px 22px rgba(1,26,13,.5))}
 .sem-marca text{font-family:"Inter",var(--sem-num);font-weight:900}
 
@@ -3312,9 +3313,18 @@ CSS_SEMANAL = """
 /* mesma especificidade da regra acima (html:not(.gsap) ...), senão ela vence e anima mesmo assim */
 @media (prefers-reduced-motion:reduce){html:not(.gsap) .pag-semanal .secao.ativa .sem-anima{animation:none}}
 
+/* ---- telas baixas: a marca d'água ocupa a largura toda (e por isso fica alta);
+   o respiro em volta dela e entre as linhas dos Destaques cede para nada rolar ---- */
+@media (max-height:680px){
+  .pag-semanal .palco{padding-bottom:4px}
+  .sem-marca{margin-top:4px}
+  .sem-corpo{gap:calc(var(--sem-u) * 5)}
+}
+
 /* ---- telas estreitas: menu vira faixa fixa no topo, folha rola normal ---- */
 @media (max-width:899px){
-  .pag-semanal .palco{padding:10px 10px 0}
+  .pag-semanal{--sem-palco-x:10px}
+  .pag-semanal .palco{padding:10px var(--sem-palco-x) 0}
   .sem-moldura{flex-direction:column}
   .sem-menu{position:sticky;top:0;order:-1;width:auto;height:auto;flex-direction:row;flex-wrap:wrap;gap:6px 16px;
     padding:10px 6px 12px;border-radius:0;z-index:20}
