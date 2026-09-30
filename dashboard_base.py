@@ -3281,7 +3281,11 @@ CSS_SEMANAL = """
 .sem-num{font:900 clamp(64px,calc(var(--sem-u) * 13.8),150px)/.8 var(--sem-num);color:var(--sem-tinta);letter-spacing:-.045em;
   font-variant-numeric:tabular-nums;white-space:nowrap;padding:.03em .04em .02em 0}
 .sem-num .sem-dado,.sem-pessoa-num .sem-dado{color:rgba(11,15,13,.25)}
-.sem-lado{display:flex;flex-direction:column;align-items:flex-start;gap:calc(var(--sem-u) * .9)}
+.sem-lado{display:flex;flex-direction:column;align-items:flex-start;gap:calc(var(--sem-u) * .9);min-width:0}
+/* Fila: o texto de apoio fica SEMPRE ao lado do número e quebra dentro da coluna. Com
+   flex-wrap ele descia para baixo do número quando era longo (ex.: aviso de "sem dado")
+   e a seção passava da altura do painel. */
+.sem-esq .sem-kpi{flex-wrap:nowrap}
 .pag-semanal .sem-lado .badge{font-size:clamp(9.5px,calc(var(--sem-u) * 1.05),12px);padding:.35em 1em;gap:.45em;font-weight:400}
 .pag-semanal .sem-lado .badge b{font-size:1em;font-weight:900}
 .sem-media,.sem-linha-fila,.sem-detalhe{font:400 clamp(13px,calc(var(--sem-u) * 2),21px)/1.25 var(--sans);color:var(--sem-apagado)}
@@ -3305,6 +3309,10 @@ CSS_SEMANAL = """
 .sem-carga{display:flex;flex-direction:column;gap:calc(var(--sem-u) * 1.6);margin-top:calc(var(--sem-u) * -2.4);
   max-width:calc(100% - var(--sem-menu-w) + var(--sem-pad-x) - var(--sem-u) * 2)}
 .sem-carga .sem-por{padding-left:calc(var(--sem-u) * .6)}
+/* Carga: a nota de cobertura fica na linha do rótulo (espaço que já sobra), não numa
+   linha a mais embaixo dos devs -- a altura é a mesma com ou sem nota. */
+.sem-carga-topo{display:flex;flex-wrap:wrap;align-items:flex-end;gap:4px calc(var(--sem-u) * 2.4)}
+.sem-carga-topo .sem-nota{padding-bottom:1px}
 /* entrada: com GSAP quem anima é JS_SEMANAL; sem ele (ou sem JS) fica esta, em CSS */
 .sem-entrada .sem-menu a,.sem-entrada .sem-marca{opacity:0}
 @media (min-width:900px){
@@ -3334,6 +3342,7 @@ CSS_SEMANAL = """
   .sem-carga{max-width:none;margin-top:0}
   .sem-pessoas,.sem-devs{column-gap:18px}
   .sem-bloco.sem-esq,.sem-bloco.sem-cliente{flex:1 1 100%}
+  .sem-esq .sem-kpi{flex-wrap:wrap}
   .sem-num{font-size:clamp(58px,17vw,96px)}
 }
 """

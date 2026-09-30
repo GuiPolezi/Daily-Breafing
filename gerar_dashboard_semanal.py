@@ -329,7 +329,7 @@ def bloco_fila(atual: dict, anterior: dict) -> str:
     c, a = atual["criados"], anterior["criados"]
     if c["total"] is None:
         kpi = (f'<p class="sem-num">{SEM_DADO}</p><div class="sem-lado"><p class="sem-nota">'
-               'Sem contagem de chamados criados nos dias desta semana (campo criados_total ausente no histórico).'
+               'Ainda sem contagem de chamados criados nesta semana (começa na próxima coleta).'
                '</p></div>')
     else:
         # Só compara semana completa com semana completa: com dias faltando a diferença seria falsa.
@@ -379,14 +379,16 @@ def bloco_carga(atual: dict) -> str:
                 + '<p class="sem-nota">Sem devs registrados na semana.</p></div>')
     nota = ""
     if carga["dias"] == 0:
-        nota = ('<p class="sem-nota">Sem atribuições contadas ainda: a conta começa no segundo dia de '
-                'coleta com o retrato de chamados por dev (o primeiro é só a linha de base).</p>')
+        nota = ('<p class="sem-nota" title="o primeiro dia de coleta com o retrato de chamados por dev é só a '
+                'linha de base">Ainda sem atribuições contadas (a conta começa no 2º dia de coleta).</p>')
     elif carga["dias"] < carga["possiveis"]:
         nota = f'<p class="sem-nota">atribuições contadas em {carga["dias"]} de {carga["possiveis"]} dia(s) da semana</p>'
-    return ('<div class="sem-carga sem-anima" style="--i:3">' + rotulo
+    # a nota vai na linha do rótulo: com ou sem ela, o bloco tem a mesma altura
+    return ('<div class="sem-carga sem-anima" style="--i:3">'
+            + f'<div class="sem-carga-topo">{rotulo}{nota}</div>'
             + lista_pessoas(carga["devs"], "Chamados atribuídos por dev na semana", classe="sem-devs", curto=True,
                             anonimo="" if MOSTRAR_RANKING else "DEV")
-            + nota + '</div>')
+            + '</div>')
 
 
 def secao_destaques_semana(atual: dict, anterior: dict, comparavel: bool) -> str:
