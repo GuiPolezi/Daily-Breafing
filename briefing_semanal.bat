@@ -11,4 +11,7 @@ echo === Relatorio gerado: relatorio_semanal.md ===
 
 echo --- gerando dashboard semanal
 python gerar_dashboard_semanal.py || echo AVISO: dashboard semanal falhou
+
+echo --- publicando no servidor (IIS)
+python publicar.py || echo AVISO: publicacao no servidor falhou, a pagina segue so local
 if exist dashboard_semanal.html start "" dashboard_semanal.html

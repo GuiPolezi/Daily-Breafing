@@ -12,4 +12,6 @@ call claude -p "Leia todos os arquivos JSON na pasta dados/ e o historico em his
 echo === Relatorio gerado: relatorio_diretor.md ===
 
 python gerar_dashboard_diretor.py || echo AVISO: dashboard da diretoria falhou
+REM Rodando sozinho publica a propria pagina; chamado pelo briefing.bat (sem-abrir), quem publica e ele.
+if "%1"=="" python publicar.py || echo AVISO: publicacao no servidor falhou
 if "%1"=="" if exist dashboard_diretor.html start "" dashboard_diretor.html

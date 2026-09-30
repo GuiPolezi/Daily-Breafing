@@ -12,4 +12,6 @@ call claude -p "Leia APENAS dados/licencas.json, historico/licencas.jsonl e hist
 echo === Relatorio gerado: relatorio_licencas.md ===
 
 python gerar_dashboard_licencas.py || echo AVISO: dashboard de licencas falhou
+REM Rodando sozinho publica a propria pagina; chamado pelo briefing.bat (sem-abrir), quem publica e ele.
+if "%1"=="" python publicar.py || echo AVISO: publicacao no servidor falhou
 if "%1"=="" if exist dashboard_licencas.html start "" dashboard_licencas.html

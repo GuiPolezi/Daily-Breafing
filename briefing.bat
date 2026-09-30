@@ -29,6 +29,11 @@ call briefing_diretor.bat sem-abrir || echo AVISO: briefing da diretoria falhou
 echo --- briefing de licencas
 call briefing_licencas.bat sem-abrir || echo AVISO: briefing de licencas falhou
 
+REM Copia os dashboard*.html (e um index.html) para a pasta do site no IIS.
+REM Destino em PUBLICAR_DIR no .env; vazio = desligado. Falha so avisa.
+echo --- publicando no servidor (IIS)
+python publicar.py || echo AVISO: publicacao no servidor falhou, as paginas seguem so locais
+
 REM Abre as tres no fim, para nao interromper o pipeline no meio.
 REM As chamadas acima usam "sem-abrir" so para nao abrir a mesma pagina duas vezes.
 echo --- abrindo as tres paginas

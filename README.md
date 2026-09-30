@@ -160,7 +160,11 @@ Ao final do `briefing.bat`, além do `relatorio.md`, são executados:
 2. `notificar.py` — dispara um toast nativo do Windows via PowerShell (sem
    dependência nova) com o resumo: atendimentos de ontem, fila e licenças em
    risco. Falha na notificação não interrompe o briefing.
-3. `start "" dashboard.html` — abre o dashboard no navegador padrão.
+3. `publicar.py` — copia os `dashboard*.html` (e um `index.html` com os links)
+   para a pasta do site no IIS, definida em `PUBLICAR_DIR` no `.env` (ex.:
+   `\\SERVIDOR\relatorios$`). Vazio desliga. Se o servidor estiver fora do ar, só
+   avisa: as páginas continuam abrindo localmente.
+4. `start "" dashboard.html` — abre o dashboard no navegador padrão.
 
 Configuração opcional no `.env`:
 
