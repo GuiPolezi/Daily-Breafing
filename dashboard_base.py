@@ -3345,6 +3345,82 @@ CSS_SEMANAL = """
   .sem-esq .sem-kpi{flex-wrap:wrap}
   .sem-num{font-size:clamp(58px,17vw,96px)}
 }
+
+/* ==== Sobre a Semana (slider do relatório) =================================
+   Esquerda: título, slide e controles. Direita: coluna de temas encaixada ACIMA
+   do menu (mesma borda esquerda do menu, termina onde o recorte começa). O
+   quadrado do tema atual é um bloco verde (.sem-temas-marca) que DESLIZA entre o
+   fundo dos itens e o texto deles (camadas: fundo < marca < texto) -- quem anima é
+   o JS_SEMANAL_SOBRE (GSAP). Com a marca atrás de tudo, o item de destino ficava
+   meio branco durante o deslize. */
+.pag-semanal{--sem-verde:#09512F;--sem-tema-bg:#8DB09F;--sem-ponto-bg:#A7ACA9}
+.pag-semanal .secao#briefing{padding-right:calc(var(--sem-menu-w) + var(--sem-pad-x));
+  padding-bottom:clamp(14px,2.6vh,30px)}
+.sem-slider{position:relative;min-height:0;display:flex;flex-direction:column}
+.sem-slides{position:relative;flex:1 1 auto;min-height:0;overflow:hidden}
+.sem-slide{position:absolute;inset:0;overflow:auto;overscroll-behavior:contain;visibility:hidden;
+  scrollbar-width:thin;scrollbar-color:rgba(9,81,47,.35) transparent;outline:none}
+.sem-slide.ativo{visibility:visible}
+.sem-slide-miolo{padding:calc(var(--sem-u) * 1.4) 2px calc(var(--sem-u) * 1)}
+.sem-slide-titulo{font:900 clamp(20px,calc(var(--sem-u) * 3.2),36px)/1.1 var(--sans);color:var(--sem-verde);
+  letter-spacing:-.02em;margin:0 0 calc(var(--sem-u) * 2.6)}
+.sem-slide-corpo{font:400 clamp(14px,calc(var(--sem-u) * 2),21px)/1.5 var(--sans);color:var(--sem-tinta);max-width:78ch}
+.sem-slide-corpo>*+*{margin-top:calc(var(--sem-u) * 1.4)}
+.sem-slide-corpo ul{list-style:disc;padding-left:1.25em;display:flex;flex-direction:column;gap:calc(var(--sem-u) * .9)}
+.sem-slide-corpo ol{list-style:decimal;padding-left:1.4em;display:flex;flex-direction:column;gap:calc(var(--sem-u) * .9)}
+.sem-slide-corpo li::marker{color:var(--sem-tinta)}
+.sem-slide-corpo li ul,.sem-slide-corpo li ol{margin-top:calc(var(--sem-u) * .7)}
+.sem-slide-corpo strong{font-weight:900}
+.sem-slide-corpo h4,.sem-slide-corpo h5{font:900 1em/1.3 var(--sans);color:var(--sem-verde)}
+.sem-slide-corpo .tabela-md{max-width:100%;overflow-x:auto}
+.sem-slide-corpo table{border-collapse:collapse;font-size:.92em;min-width:min(100%,420px)}
+.sem-slide-corpo th{font-weight:900;color:var(--sem-verde);text-align:left;border-bottom:2px solid var(--sem-verde)}
+.sem-slide-corpo th,.sem-slide-corpo td{padding:.45em 1.4em .45em 0;vertical-align:top}
+.sem-slide-corpo td{border-bottom:1px solid rgba(9,81,47,.14)}
+.sem-slide-corpo .al-d{text-align:right}.sem-slide-corpo .al-c{text-align:center}
+.sem-sobre-nota{padding-top:4px}
+/* controles: setas finas e traços, centrados na área do slide */
+.sem-controles{display:flex;align-items:center;justify-content:center;gap:clamp(14px,calc(var(--sem-u) * 2.8),34px);padding-top:calc(var(--sem-u) * 1.2)}
+.sem-nav-seta{display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:50%;
+  background:transparent;color:var(--sem-tinta);cursor:pointer;transition:background .2s,opacity .2s,transform .2s var(--ease)}
+.sem-nav-seta svg{width:26px;height:26px}
+.sem-nav-seta:hover:not(:disabled){background:rgba(9,81,47,.08)}
+.sem-nav-seta:disabled{opacity:.28;cursor:default}
+.sem-pontos{display:flex;align-items:center;gap:clamp(10px,calc(var(--sem-u) * 1.8),20px)}
+.sem-ponto{width:clamp(34px,calc(var(--sem-u) * 5.6),58px);height:6px;padding:0;border:0;border-radius:1px;
+  background:var(--sem-ponto-bg);cursor:pointer;transition:background .3s var(--ease),transform .3s var(--ease)}
+.sem-ponto:hover{background:#7E8581}
+.sem-ponto.ativo{background:var(--sem-tinta)}
+/* coluna de temas */
+.sem-temas{position:absolute;z-index:2;top:calc(var(--sem-u) * 1.1);right:calc(var(--sem-u) * .8);
+  width:calc(var(--sem-menu-w) - var(--sem-u) * .8);bottom:calc(var(--sem-menu-h) + var(--sem-u) * .8);
+  display:flex;flex-direction:column;gap:calc(var(--sem-u) * .9);border-radius:var(--sem-raio) var(--sem-raio) 0 var(--sem-raio);
+  overflow:hidden;isolation:isolate}
+.sem-temas-marca{position:absolute;left:0;top:0;width:100%;height:0;z-index:1;background:var(--sem-verde);
+  pointer-events:none;will-change:transform}
+.sem-tema{position:relative;flex:1 1 0;min-height:0;display:flex;align-items:center;justify-content:center;
+  padding:4px 12px;border:0;background:var(--sem-tema-bg);color:#fff;cursor:pointer;text-align:center;
+  font:400 clamp(14px,calc(var(--sem-u) * 2.9),32px)/1.1 var(--sans);letter-spacing:-.01em;transition:background .25s}
+.sem-tema span{position:relative;z-index:2;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.sem-tema:hover:not(.ativo){background:#7FA592}
+.sem-tema.ativo{background:var(--sem-verde);font-weight:900;font-size:clamp(14px,calc(var(--sem-u) * 2.8),31px)}
+/* com o JS, o verde do tema ativo é a marca deslizante (o fundo do item fica o neutro) */
+.sem-temas.com-marca .sem-tema.ativo{background:var(--sem-tema-bg)}
+.sem-tema:focus-visible{outline:3px solid var(--sem-tinta);outline-offset:-5px}
+@media (max-width:899px){
+  .pag-semanal .secao#briefing{padding-right:18px;padding-bottom:22px}
+  .sem-temas{position:static;order:1;width:auto;flex-direction:row;overflow-x:auto;border-radius:12px;scrollbar-width:none}
+  .sem-temas::-webkit-scrollbar{display:none}
+  .sem-slider,.sem-controles,.sem-sobre-nota{order:2}
+  .sem-temas-marca{display:none}
+  .sem-temas.com-marca .sem-tema.ativo{background:var(--sem-verde)}
+  .sem-tema{flex:0 0 auto;min-height:44px;padding:8px 14px;font-size:14px}
+  .sem-tema.ativo{font-size:14px}
+  .sem-slides{overflow:visible}
+  .sem-slide{position:static;display:none;overflow:visible}
+  .sem-slide.ativo{display:block}
+}
+@media print{.sem-temas-marca{display:none}.sem-temas .sem-tema.ativo{background:var(--sem-verde)}}
 """
 
 # --- JS do briefing semanal (requer GSAP; carregado depois de JS_UI e JS_HEADER) ---
@@ -3435,5 +3511,160 @@ JS_SEMANAL = """
     lista(doc, ".sem-menu a, .sem-marca").forEach(function(el){ el.style.opacity = ""; el.style.transform = ""; });
     liberar();
   }
+})();
+"""
+
+
+# --- JS do "Sobre a Semana": slider com coluna de temas. Roda COM ou SEM GSAP ---
+# (sem ele, ou com movimento reduzido, a troca é instantânea). Troca de slide no
+# espírito do slider de referência do Guilherme (Swiper "interleave"): o slide
+# entra de um lado enquanto o miolo desliza meia distância no sentido contrário
+# (parallax); título e itens entram em cascata; na coluna da direita um bloco verde
+# desliza até o tema atual. Teclado: <- -> com a seção ativa; setas p/ cima e p/
+# baixo e Home/End na coluna de temas (roving tabindex).
+JS_SEMANAL_SOBRE = """
+(function(){
+  "use strict";
+  var doc = document, win = window;
+  var raiz = doc.querySelector("[data-sem-slider]");
+  if (!raiz) return;
+  var secao = raiz.closest(".secao");
+  var lista = function(el, s){ return Array.prototype.slice.call(el.querySelectorAll(s)); };
+  var slides = lista(raiz, ".sem-slide"), temas = lista(secao, ".sem-tema");
+  var pontos = lista(secao, ".sem-ponto"), setas = lista(secao, ".sem-nav-seta");
+  var coluna = secao.querySelector(".sem-temas"), marca = secao.querySelector(".sem-temas-marca");
+  var n = slides.length, atual = 0, tl = null;
+  if (!n) return;
+  var rm = !!(win.matchMedia && win.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var G = function(){ return (!rm && win.gsap) ? win.gsap : null; };
+  var mq = win.matchMedia ? win.matchMedia("(min-width: 900px)") : null;
+  var palco = function(){ return !mq || mq.matches; };
+
+  function posMarca(k, animar){
+    var t = temas[k];
+    if (!marca || !t) return;
+    var g = G(), alvo = { y: t.offsetTop, height: t.offsetHeight };
+    if (g && animar) g.to(marca, { y: alvo.y, height: alvo.height, duration: .75, ease: "power3.inOut", overwrite: true });
+    else if (g) g.set(marca, alvo);
+    else { marca.style.transform = "translateY(" + alvo.y + "px)"; marca.style.height = alvo.height + "px"; }
+  }
+  function marcar(k){
+    slides.forEach(function(s, j){
+      var on = j === k;
+      s.classList.toggle("ativo", on);
+      s.inert = !on;
+      s.setAttribute("aria-hidden", on ? "false" : "true");
+    });
+    temas.forEach(function(t, j){
+      var on = j === k;
+      t.classList.toggle("ativo", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    });
+    pontos.forEach(function(p, j){
+      var on = j === k;
+      p.classList.toggle("ativo", on);
+      if (on) p.setAttribute("aria-current", "true"); else p.removeAttribute("aria-current");
+    });
+    if (setas[0]) setas[0].disabled = k === 0;
+    if (setas[1]) setas[1].disabled = k === n - 1;
+    // tela estreita: a coluna vira faixa horizontal e o tema ativo precisa aparecer nela
+    if (!palco() && coluna && temas[k] && coluna.scrollWidth > coluna.clientWidth) {
+      try { coluna.scrollTo({ left: temas[k].offsetLeft - (coluna.clientWidth - temas[k].offsetWidth) / 2,
+                              behavior: rm ? "auto" : "smooth" }); } catch (e) {}
+    }
+  }
+  function itensDe(slide){
+    return lista(slide, ".sem-slide-titulo, .sem-slide-corpo > ul > li, .sem-slide-corpo > ol > li, .sem-slide-corpo > p, " +
+                        ".sem-slide-corpo > .tabela-md, .sem-slide-corpo > h4, .sem-slide-corpo > h5").slice(0, 16);
+  }
+  function ir(k, focarTema){
+    k = Math.max(0, Math.min(n - 1, k));
+    if (focarTema && temas[k]) temas[k].focus();
+    if (k === atual) return;
+    var de = atual, dir = k > de ? 1 : -1, g = G();
+    atual = k;
+    if (tl) { tl.progress(1).kill(); tl = null; }
+    marcar(k);
+    posMarca(k, true);
+    if (!g || !palco()) return;
+    var sai = slides[de], entra = slides[k];
+    var mSai = sai.querySelector(".sem-slide-miolo"), mEntra = entra.querySelector(".sem-slide-miolo");
+    var itens = itensDe(entra), todos = [sai, entra, mSai, mEntra];
+    entra.scrollTop = 0;
+    g.set(sai, { visibility: "visible" });
+    tl = g.timeline({ defaults: { ease: "power3.inOut" },
+                      onComplete: function(){ g.set(todos.concat(itens), { clearProps: "all" }); tl = null; } })
+      .fromTo(entra, { xPercent: 100 * dir }, { xPercent: 0, duration: .95 }, 0)
+      .fromTo(mEntra, { xPercent: -50 * dir }, { xPercent: 0, duration: .95 }, 0)
+      .fromTo(sai, { xPercent: 0 }, { xPercent: -100 * dir, duration: .95 }, 0)
+      .fromTo(mSai, { xPercent: 0 }, { xPercent: 50 * dir, duration: .95 }, 0)
+      .from(itens, { x: 50 * dir, opacity: 0, duration: .7, ease: "power3.out", stagger: .06 }, .5);
+    if (temas[k]) tl.fromTo(temas[k].querySelector("span"), { scale: .9 }, { scale: 1, duration: .5, ease: "back.out(2.2)" }, .25);
+  }
+
+  // entrada da seção: a coluna de temas chega da direita e o slide atual em cascata
+  function entrada(){
+    var g = G();
+    posMarca(atual, false);
+    if (!g || !palco()) return;
+    g.fromTo(temas, { x: 40, opacity: 0 }, { x: 0, opacity: 1, duration: .6, ease: "power3.out", stagger: .06, clearProps: "transform,opacity" });
+    if (marca) g.fromTo(marca, { opacity: 0 }, { opacity: 1, duration: .5, delay: .15, clearProps: "opacity" });
+    g.from(itensDe(slides[atual]), { y: 16, opacity: 0, duration: .6, ease: "power3.out", stagger: .06, delay: .2, clearProps: "transform,opacity" });
+  }
+
+  temas.forEach(function(t, j){ t.addEventListener("click", function(){ ir(j); }); });
+  pontos.forEach(function(p, j){ p.addEventListener("click", function(){ ir(j); }); });
+  setas.forEach(function(b){
+    b.addEventListener("click", function(){
+      var d = Number(b.getAttribute("data-dir") || 1), g = G();
+      if (g) g.fromTo(b, { x: 0 }, { x: 4 * d, duration: .12, yoyo: true, repeat: 1, ease: "power1.inOut", clearProps: "transform" });
+      ir(atual + d);
+    });
+  });
+  // coluna de temas: setas verticais trocam o tema (e não a seção da página)
+  if (coluna) coluna.addEventListener("keydown", function(e){
+    var k = e.key, alvo = null;
+    if (k === "ArrowDown" || k === "ArrowRight") alvo = atual + 1;
+    else if (k === "ArrowUp" || k === "ArrowLeft") alvo = atual - 1;
+    else if (k === "Home") alvo = 0;
+    else if (k === "End") alvo = n - 1;
+    if (alvo === null) return;
+    e.preventDefault(); e.stopPropagation();
+    ir(alvo, true);
+  });
+  // <- -> em qualquer lugar da página enquanto esta seção estiver na tela
+  doc.addEventListener("secao:ativa", function(e){
+    if (e.detail && e.detail.id === secao.id) entrada();
+  });
+  // Lê a classe .ativa na hora da tecla: com movimento reduzido o JS_UI emite
+  // secao:ativa de forma síncrona, ANTES deste script existir, e um estado guardado
+  // a partir do evento deixava as setas mortas num link direto para #briefing.
+  win.addEventListener("keydown", function(e){
+    if (!palco() || !secao.classList.contains("ativa") || e.altKey || e.ctrlKey || e.metaKey) return;
+    var t = e.target, tag = t && t.tagName ? t.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select" || (coluna && t && t.nodeType === 1 && coluna.contains(t))) return;
+    if (e.key === "ArrowLeft") { e.preventDefault(); ir(atual - 1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); ir(atual + 1); }
+  });
+  // arraste horizontal (touch)
+  var x0 = null, y0 = null;
+  raiz.addEventListener("touchstart", function(e){ x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  raiz.addEventListener("touchend", function(e){
+    if (x0 === null) return;
+    var dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = y0 = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) ir(atual + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+  // a marca acompanha o tamanho dos itens (resize, fontes carregando)
+  var pendente = null;
+  var reposicionar = function(){ win.clearTimeout(pendente); pendente = win.setTimeout(function(){ posMarca(atual, false); }, 120); };
+  win.addEventListener("resize", reposicionar);
+  win.addEventListener("load", reposicionar);
+  if (doc.fonts && doc.fonts.ready) doc.fonts.ready.then(reposicionar);
+
+  if (coluna) coluna.classList.add("com-marca");
+  marcar(0);
+  posMarca(0, false);
 })();
 """

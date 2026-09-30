@@ -31,7 +31,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dashboard_base import (
-    CSS, CSS_SEMANAL, JS_CHARTS, JS_HEADER, JS_SEMANAL, JS_UI, MOSTRAR_RANKING,
+    CSS, CSS_SEMANAL, JS_CHARTS, JS_HEADER, JS_SEMANAL, JS_SEMANAL_SOBRE, JS_UI, MOSTRAR_RANKING,
     badge_delta, carregar_chart_js, carregar_fontes_css, carregar_fontes_inter_css, grafico, carregar_gsap, coletar_nomes_tecnicos,
     dividir_briefing, esc, fmt_num, inline_md, json_inline, label_dia, ler_historico, markdown_para_html,
     num_html, redigir_nomes, render_ranking, secao_vazia, titulo_secao,
@@ -391,6 +391,78 @@ def bloco_carga(atual: dict) -> str:
             + '</div>')
 
 
+# ---- Sobre a Semana: slider com a coluna de temas à direita (mockup de 30/09/2026) ----
+PALAVRAS_MINUSCULAS = {"de", "da", "do", "das", "dos", "e", "a", "o", "as", "os", "com", "em", "na", "no", "por", "para"}
+# Rótulo curto da coluna de temas para as seções que o prompt de briefing_semanal.bat pede.
+# Casa o título INTEIRO (sem acento/caixa): por prefixo, "Atendimentos por sistema" viraria
+# "Atend. Semana". Título fora da lista cai no rotulo_curto() genérico.
+ROTULOS_TEMAS = {
+    "periodo coberto": "Período Coberto", "atendimentos da semana": "Atend. Semana",
+    "ranking de tecnicos": "Ranking Técnicos", "fila de chamados": "Fila Chamados",
+    "licencas": "Licenças", "comparacao com a semana anterior": "Comparação",
+}
+
+
+def titulo_tema(texto: str) -> str:
+    """'Período coberto' -> 'Período Coberto' (preposições ficam minúsculas)."""
+    palavras = str(texto).split()
+    return " ".join(p if (i and p.lower() in PALAVRAS_MINUSCULAS) else p[:1].upper() + p[1:]
+                    for i, p in enumerate(palavras))
+
+
+def rotulo_curto(texto: str) -> str:
+    rotulo = ROTULOS_TEMAS.get(chave_cliente(texto).rstrip(".:"))
+    if rotulo:
+        return rotulo
+    significativas = [p for p in str(texto).split() if p.lower() not in PALAVRAS_MINUSCULAS]
+    return titulo_tema(" ".join(significativas[:2]) or str(texto))
+
+
+SETA_ESQ = ('<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 4 7 12l8 8" '
+            'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+SETA_DIR = SETA_ESQ.replace("M15 4 7 12l8 8", "M9 4l8 8-8 8")
+
+
+def secao_sobre_semana(slides: list[dict], nota: str, carimbo: str) -> str:
+    """Slider do relatório semanal. Sem a classe .slider de propósito: quem anima é o
+    JS_SEMANAL_SOBRE (GSAP), não o slider genérico do JS_UI. O id "briefing" fica."""
+    n = len(slides)
+    paineis, temas, pontos = [], [], []
+    for i, s in enumerate(slides):
+        on = i == 0
+        titulo = titulo_tema(s["titulo"])
+        corpo = markdown_para_html(s["md"], base=4) or "<p>—</p>"
+        paineis.append(
+            f'<article class="sem-slide{" ativo" if on else ""}" id="sem-slide-{i}" role="tabpanel" '
+            f'aria-labelledby="sem-tema-{i}" aria-roledescription="slide" aria-label="{i + 1} de {n}: {esc(titulo)}" '
+            f'{"" if on else "aria-hidden=\"true\" inert "}data-scroll tabindex="0">'
+            f'<div class="sem-slide-miolo"><h3 class="sem-slide-titulo">{esc(titulo)}</h3>'
+            f'<div class="sem-slide-corpo">{corpo}</div></div></article>')
+        temas.append(
+            f'<button type="button" class="sem-tema{" ativo" if on else ""}" role="tab" id="sem-tema-{i}" '
+            f'aria-controls="sem-slide-{i}" aria-selected="{"true" if on else "false"}" tabindex="{0 if on else -1}" '
+            f'title="{esc(titulo)}"><span>{esc(rotulo_curto(s["titulo"]))}</span></button>')
+        pontos.append(f'<button type="button" class="sem-ponto{" ativo" if on else ""}" data-ir="{i}" '
+                      f'aria-label="Ir para {esc(titulo)}"{" aria-current=\"true\"" if on else ""}></button>')
+    carimbo_txt = f'relatório de {esc(carimbo)}' if carimbo else ""
+    return f"""
+<section class="secao sem-sobre" id="briefing" aria-labelledby="t-briefing">
+  <header class="sem-cabeca bloco-fixo" title="{carimbo_txt}">{titulo_secao("Sobre a Semana", "briefing")}</header>
+  <div class="sem-slider bloco-elastico" data-sem-slider aria-roledescription="carrossel" aria-label="Tópicos do relatório semanal">
+    <div class="sem-slides">{''.join(paineis)}</div>
+  </div>
+  <div class="sem-controles bloco-fixo">
+    <button type="button" class="sem-nav-seta" data-dir="-1" aria-label="Tópico anterior" disabled>{SETA_ESQ}</button>
+    <div class="sem-pontos">{''.join(pontos)}</div>
+    <button type="button" class="sem-nav-seta" data-dir="1" aria-label="Próximo tópico"{" disabled" if n < 2 else ""}>{SETA_DIR}</button>
+  </div>
+  {nota}
+  <div class="sem-temas bloco-fixo" role="tablist" aria-label="Tópicos do relatório" aria-orientation="vertical">
+    <span class="sem-temas-marca" aria-hidden="true"></span>{''.join(temas)}
+  </div>
+</section>"""
+
+
 def secao_destaques_semana(atual: dict, anterior: dict, comparavel: bool) -> str:
     return f"""
 <section class="secao" id="destaques" data-scroll aria-labelledby="t-destaques">
@@ -441,37 +513,12 @@ def gerar_html() -> str:
             curta = len(intro) <= 240 and not re.search(r"^\s*([-*+|#]|\d+[.)])", intro, flags=re.M)
             if curta and len(slides) > 1:
                 # linha de metadado ("Gerado em ...") não merece um slide inteiro: vira nota sob o carrossel
-                nota_rel = f'<p class="nota-escura bloco-fixo">{inline_md(" ".join(intro.split()))}</p>'
+                nota_rel = f'<p class="sem-nota sem-sobre-nota bloco-fixo">{inline_md(" ".join(intro.split()))}</p>'
                 slides = slides[1:]
             else:
                 slides[0]["titulo"] = "Visão geral"
-        itens_slides, pontos = [], []
-        for i, s in enumerate(slides):
-            corpo_md = s["md"]
-            n_itens = len(re.findall(r"^\s*[-*+]\s+", corpo_md, flags=re.M))
-            duas = " duas-colunas" if ((n_itens >= 5 or len(corpo_md) > 650)
-                                       and not re.search(r"^\s*\d+[.)]\s+", corpo_md, flags=re.M)
-                                       and not re.search(r"^\s*\|", corpo_md, flags=re.M)) else ""
-            corpo = markdown_para_html(corpo_md, base=4) or "<p>—</p>"
-            itens_slides.append(
-                f'<li class="slide" role="group" aria-roledescription="slide" aria-label="{i + 1} de {len(slides)}: {esc(s["titulo"])}">'
-                f'<article class="card card-slide" data-scroll><h3 class="kpi-rotulo">{esc(s["titulo"])}</h3><div class="slide-corpo{duas}">{corpo}</div></article></li>'
-            )
-            pontos.append(f'<button type="button" role="tab" aria-selected="{"true" if i == 0 else "false"}" aria-label="{esc(s["titulo"])}"></button>')
         carimbo_rel = relatorio_em.strftime("%d/%m/%Y %H:%M") if relatorio_em else ""
-        secao_briefing = f"""
-<section class="secao" id="briefing" aria-labelledby="t-briefing">
-  <header class="secao-cabeca dividida bloco-fixo">{titulo_secao("Sobre a Semana", "briefing")}<p class="lado carimbo-briefing">{esc(carimbo_rel)}</p></header>
-  <div class="slider bloco-elastico" aria-roledescription="carrossel" aria-label="Tópicos do relatório semanal">
-    <div class="slides-janela"><ul class="slides">{''.join(itens_slides)}</ul></div>
-    <div class="slider-controles">
-      <button class="seta" type="button" data-dir="-1" aria-label="Tópico anterior">‹</button>
-      <div class="indicadores" role="tablist" aria-label="Tópicos">{''.join(pontos)}</div>
-      <button class="seta" type="button" data-dir="1" aria-label="Próximo tópico">›</button>
-    </div>
-  </div>
-  {nota_rel}
-</section>"""
+        secao_briefing = secao_sobre_semana(slides, nota_rel, carimbo_rel)
 
     # ================================================================ 3. EVOLUÇÃO
     serie = {
@@ -553,7 +600,8 @@ def gerar_html() -> str:
     dados_de = fmt_data(atual["ultima"]) if recorte else "—"
     menu = "".join(f'<a href="#{id_}" data-alvo="{id_}">{esc(rotulo)}</a>' for id_, rotulo in ORDEM_SEMANAL)
 
-    script = f"<script>{JS_UI}</script>"
+    # JS_SEMANAL_SOBRE roda com ou sem GSAP (sem ele, a troca de slide é instantânea)
+    script = f"<script>{JS_UI}</script>\n<script>{JS_SEMANAL_SOBRE}</script>"
     if gsap_js is not None:
         # A contagem dos números passa para o GSAP (JS_SEMANAL): marca os [data-n] ANTES do JS_UI,
         # que só conta os que não têm data-contado. Se o GSAP falhar, o texto já é o valor final.
