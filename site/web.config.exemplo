@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Exemplo de web.config para a pasta do site novo no IIS 7.5.
+     NAO e publicado pelo publicar_site.py: copie a mao para a pasta do site,
+     com o nome web.config, uma unica vez. NAO FOI TESTADO num IIS de verdade.
+
+     O que ele faz:
+       - so entrega as extensoes que o site usa (e "." para a raiz);
+       - ensina ao IIS 7.5 os tipos .json e .woff2, que ele nao conhece;
+       - manda o navegador nao guardar copia dos dados.
+
+     O que NAO esta aqui e se configura no Gerenciador do IIS (essas secoes
+     costumam ser bloqueadas no servidor e dariam erro 500.19 se viessem aqui):
+       - Autenticacao: ligar "Autenticacao do Windows", desligar "Anonima";
+       - quem ve o que: permissao NTFS em cada arquivo de dados\<publico>.json. -->
+<configuration>
+  <system.webServer>
+    <security>
+      <requestFiltering>
+        <fileExtensions allowUnlisted="false">
+          <add fileExtension="." allowed="true" />
+          <add fileExtension=".html" allowed="true" />
+          <add fileExtension=".css" allowed="true" />
+          <add fileExtension=".js" allowed="true" />
+          <add fileExtension=".json" allowed="true" />
+          <add fileExtension=".woff2" allowed="true" />
+        </fileExtensions>
+      </requestFiltering>
+    </security>
+    <staticContent>
+      <remove fileExtension=".json" />
+      <mimeMap fileExtension=".json" mimeType="application/json; charset=utf-8" />
+      <remove fileExtension=".woff2" />
+      <mimeMap fileExtension=".woff2" mimeType="font/woff2" />
+      <clientCache cacheControlMode="DisableCache" />
+    </staticContent>
+    <httpProtocol>
+      <customHeaders>
+        <add name="X-Content-Type-Options" value="nosniff" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+</configuration>

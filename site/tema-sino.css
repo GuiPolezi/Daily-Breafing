@@ -1,0 +1,57 @@
+/* TEMA SINO do site novo.
+
+   Este arquivo é o ÚNICO lugar com cor, fonte, raio e sombra. base.css e app.js
+   só conhecem os nomes das variáveis abaixo. Para trocar de tema: copie este
+   arquivo, mude os valores e aponte o <link> das páginas para o novo.          */
+
+@font-face{font-family:"Inter";font-style:normal;font-weight:400;font-display:swap;
+  src:url("assets/fonts/Inter-400.woff2") format("woff2")}
+@font-face{font-family:"Inter";font-style:normal;font-weight:900;font-display:swap;
+  src:url("assets/fonts/Inter-900.woff2") format("woff2")}
+
+:root{
+  /* tipografia: só existem Inter 400 e 900 embutidas, por isso o corpo usa a do sistema */
+  --fonte-corpo:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --fonte-titulo:"Inter","Segoe UI",system-ui,sans-serif;
+  --peso-titulo:900;
+
+  /* página */
+  --fundo:#09512F;
+  --fundo-topo:#0C6E47;
+  --sobre-fundo:#F5FAF7;
+  --sobre-fundo-2:rgba(245,250,247,.74);
+  --sobre-fundo-linha:rgba(245,250,247,.22);
+
+  /* cartões */
+  --superficie:#ffffff;
+  --superficie-2:#EDF6F1;
+  --tinta:#0F1E16;
+  --tinta-2:#4C5F55;
+  --linha:rgba(15,30,22,.12);
+  --trilho:rgba(12,110,71,.09);
+  --raio:18px;
+  --raio-pequeno:8px;
+  --sombra:0 12px 30px -18px rgba(0,0,0,.55);
+
+  /* marca e destaque */
+  --marca:#0C6E47;
+  --destaque:#F6C445;
+  --sobre-destaque:#0F1E16;
+
+  /* estados (sempre acompanhados de texto, nunca só a cor) */
+  --ok-fundo:#DCF0E5;      --ok-tinta:#0C6E47;
+  --atencao-fundo:#FDF3D6; --atencao-tinta:#7A5A00;
+  --alerta-fundo:#FDECEA;  --alerta-tinta:#B3231C;
+
+  /* gráficos. Par categórico conferido com o validador do skill de dataviz
+     (daltonismo, contraste >= 3:1 sobre branco). Mudou o tema, valide de novo. */
+  --serie-1:#2F7FC1;       /* entrada: chamados criados */
+  --serie-2:#0C6E47;       /* saída: chamados fechados */
+  --serie-neutra:#7C8F86;
+  /* sequência de uma cor só, do claro ao escuro: quanto mais escuro, mais antigo */
+  --seq-1:#BFE3CF;
+  --seq-2:#74BD99;
+  --seq-3:#2C8D61;
+  --seq-4:#09512F;
+  --grade:rgba(15,30,22,.10);
+}

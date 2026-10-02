@@ -1,0 +1,8 @@
+# Dependencias para o SERVIDOR (Windows 7, Python 3.8).
+# O requirements.txt e a fonte da verdade no PC de desenvolvimento (Python 3.14),
+# mas os pisos dele nao existem para o 3.8 (requests>=2.34.2 nao instala).
+# Estes sao os mesmos tres pacotes, na ultima linha que ainda aceita o 3.8
+# (conferido no PyPI em 01/10/2026). Mudou uma dependencia la, mude aqui.
+requests>=2.32.4,<2.33
+python-dotenv>=1.0.1,<1.1
+beautifulsoup4>=4.12

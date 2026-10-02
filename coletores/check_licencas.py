@@ -8,6 +8,8 @@ Sistema ASP.NET MVC sem API — o coletor faz login como um navegador:
 Saída: dados/licencas.json
 """
 
+from __future__ import annotations  # o servidor roda Python 3.8 (sem `X | None`)
+
 import json
 import os
 import re

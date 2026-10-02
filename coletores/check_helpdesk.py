@@ -29,6 +29,8 @@ chamada extra à API.
 Saída: dados/helpdesk.json
 """
 
+from __future__ import annotations  # o servidor roda Python 3.8 (sem `X | None`)
+
 import json
 import os
 import sys
@@ -41,6 +43,7 @@ from dotenv import load_dotenv
 import unicodedata
 from datetime import timedelta
 import re
+from urllib.parse import quote
 
 load_dotenv()
 
@@ -133,6 +136,21 @@ BASE = f"https://v1.milldesk.com/api/{API_KEY}"
 SAIDA = Path(__file__).resolve().parent.parent / "dados" / "helpdesk.json"
 
 
+def sem_chave(erro) -> str:
+    """Texto de um erro sem a chave da API.
+
+    A chave vai no caminho da URL, e as excecoes do `requests` (HTTP 4xx/5xx,
+    timeout, DNS) citam a URL inteira. Todo erro que for gravado no JSON ou
+    impresso passa por aqui: o JSON e lido pelo briefing e vai para o site.
+    """
+    texto = str(erro)
+    # A URL pode citar a chave crua ou codificada (%XX), conforme os caracteres.
+    for forma in {API_KEY, quote(API_KEY, safe=""), quote(API_KEY)}:
+        if forma:
+            texto = texto.replace(forma, "***")
+    return texto
+
+
 def chamar(endpoint: str, params: dict | None = None):
     resp = requests.get(f"{BASE}/{endpoint}", params=params, timeout=30)
     resp.raise_for_status()
@@ -148,18 +166,20 @@ def listar_status() -> list[dict]:
     return dados if isinstance(dados, list) else [dados]
 
 
-def status_para_consultar() -> tuple[list[str], list[str], str | None]:
+def status_para_consultar(listar=None) -> tuple[list[str], list[str], str | None]:
     """Todos os status da API menos os de HELPDESK_STATUS_EXCLUIDOS.
 
     Devolve (consultar, disponiveis, aviso). Nunca levanta excecao: se
     listTicketStatus cair, volta o fallback HELPDESK_STATUS_ABERTOS com um
     aviso -- degradacao e requisito deste pipeline, nao cortesia.
+    `listar` troca quem busca a lista (coletar.py conta e espaca as chamadas);
+    sem ele, e o listar_status() de sempre.
     """
     try:
-        brutos = listar_status()
+        brutos = (listar or listar_status)()
     except Exception as e:  # rede, chave invalida, corpo inesperado
         return (list(STATUS_ABERTOS), [],
-                f"listTicketStatus indisponivel ({e}); usando HELPDESK_STATUS_ABERTOS")
+                f"listTicketStatus indisponivel ({sem_chave(e)}); usando HELPDESK_STATUS_ABERTOS")
 
     disponiveis = [s for s in (str(d.get("status") or "").strip() for d in brutos) if s]
     if not disponiveis:
@@ -347,7 +367,7 @@ def atendimentos_do_dia(dia: date) -> dict:
         try:
             resposta = chamar("showTicketsPerPeriod", {"start": data_str, "end": data_str})
         except RuntimeError as e:
-            erros.append(f"{fmt} -> {e}")
+            erros.append(f"{fmt} -> {sem_chave(e)}")
             continue
         formato_usado = fmt
         if isinstance(resposta, list):
@@ -552,7 +572,7 @@ def chamados_criados_do_periodo(dia: date, tickets_do_dia: list[dict], formato: 
                               {"start": dia.strftime(formato), "end": fim.strftime(formato)})
             tickets = resposta if isinstance(resposta, list) else []
         except Exception as e:  # rede, erro no corpo: fica so o dia util
-            fim, aviso = dia, f"periodo {dia:%d/%m}-{fim:%d/%m} indisponivel ({e}); contado so {dia:%d/%m}"
+            fim, aviso = dia, f"periodo {dia:%d/%m}-{fim:%d/%m} indisponivel ({sem_chave(e)}); contado so {dia:%d/%m}"
     de_cliente = [t for t in tickets if not eh_atendimento_diario(t)]
     resultado = chamados_criados_por_cliente(de_cliente, dia, fim)
     resultado["periodo"] = {"inicio": dia.isoformat(), "fim": fim.isoformat(), "dias": (fim - dia).days + 1}
@@ -982,7 +1002,7 @@ def main() -> None:
     try:
         por_tecnico = chamar("ticketsByAgent")
     except Exception as e:
-        por_tecnico = f"indisponível ({e})"
+        por_tecnico = f"indisponível ({sem_chave(e)})"
 
     agregados = agregar_fila(todos)
     resultado_por_sistema = agregados["por_sistema"]
@@ -1062,4 +1082,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Sem traceback de proposito: ele imprimiria a URL com a chave no
+        # console e no log. `from None` corta tambem a excecao encadeada.
+        raise SystemExit(f"ERRO em check_helpdesk.py: {type(e).__name__}: {sem_chave(e)}") from None

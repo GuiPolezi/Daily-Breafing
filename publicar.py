@@ -55,6 +55,16 @@ def mesmo_lugar(a: Path, b: Path) -> bool:
         return False
 
 
+def dentro_de(a: Path, b: Path) -> bool:
+    """`a` é `b` ou está dentro de `b`? Faz o papel de Path.is_relative_to, que só
+    existe do Python 3.9 em diante -- e o servidor roda 3.8."""
+    try:
+        a.relative_to(b)
+        return True
+    except ValueError:
+        return False
+
+
 def encosta_no_projeto(destino: Path) -> bool:
     """O destino é o projeto, está DENTRO dele ou CONTÉM o projeto?
 
@@ -67,7 +77,7 @@ def encosta_no_projeto(destino: Path) -> bool:
         d = destino.resolve()
     except OSError:
         d = destino
-    if d == raiz or d.is_relative_to(raiz) or raiz.is_relative_to(d):
+    if d == raiz or dentro_de(d, raiz) or dentro_de(raiz, d):
         return True
     if any(mesmo_lugar(c, raiz) for c in (destino, *destino.parents)):   # destino dentro do projeto
         return True

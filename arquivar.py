@@ -17,6 +17,8 @@ Campos novos nunca podem quebrar a leitura das linhas antigas: quem lê usa
 .get(), nunca indexação direta.
 """
 
+from __future__ import annotations  # o servidor roda Python 3.8 (sem `X | None`)
+
 import json
 from datetime import date
 from pathlib import Path

@@ -20,6 +20,8 @@ uma vez para obter o refresh token), AGENDA_CALENDARIOS, AGENDA_EXPEDIENTE.
 Saída: dados/agenda.json
 """
 
+from __future__ import annotations  # o servidor roda Python 3.8 (sem `X | None`)
+
 import json
 import os
 import sys
